@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+.btn-primary {
+  @apply px-4 py-2 rounded-lg border hover:text-white hover:bg-blue-700 transition-colors;
+}
+
+.btn-primary-lg {
+  @apply bg-blue-700 text-white hover:bg-blue-800  px-8 py-3 text-lg rounded;
+}
+
+.btn-secondary {
+  @apply bg-white border border-blue-600 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors;
+}
+
+.input-field {
+  @apply w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none;
+}
+
+@layer utilities {
+  .transition-max-height {
+    transition-property: max-height;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 300ms;
+  }
+}

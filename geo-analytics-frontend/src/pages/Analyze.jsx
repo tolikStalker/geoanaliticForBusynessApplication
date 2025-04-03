@@ -7,27 +7,50 @@ import {
 	DocumentArrowDownIcon,
 } from "@heroicons/react/24/outline";
 
-// Фиктивные данные
-const cities = ["Москва", "Санкт-Петербург", "Казань", "Новосибирск"];
-const mockStats = {
-	competitors: 42,
-	population: 1250000,
-	avgRent: 2500,
-};
+const customIcon = new L.Icon({
+	iconUrl:
+		"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
+	iconSize: [25, 41],
+	iconAnchor: [12, 41],
+	popupAnchor: [1, -34],
+});
 
 export default function Analyze() {
 	const [loading, setLoading] = useState(false);
+	const [cities, setCities] = useState([]);
+
 	const [activeLayer, setActiveLayer] = useState("heatmap");
 	const [filters, setFilters] = useState({
-		city: "Москва",
-		radius: 1,
+		city: null,
+		radius: 0,
 		rent: "",
 	});
 
 	const handleAnalyze = () => {
+		if (!filters.city) return;
+
 		setLoading(true);
-		setTimeout(() => setLoading(false), 2000);
+		axios
+			.get(
+				`/api/analysis?cityId=${filters.city}&radius=${filters.radius}`
+			)
+			.then((response) => {
+				setStats(response.data);
+				setLoading(false);
+			});
 	};
+
+	// Загрузка списка городов при монтировании
+	useEffect(() => {
+		axios.get("/api/cities").then((response) => {
+			setCities(response.data);
+			if (response.data.length > 0) {
+				setFilters((prev) => ({ ...prev, city: response.data[0].id }));
+			}
+		});
+	}, []);
+
+	const selectedCity = cities.find((c) => c.id === filters.city);
 
 	return (
 		<div className="h-screen flex">
@@ -41,15 +64,15 @@ export default function Analyze() {
 							Город
 						</label>
 						<select
-							value={filters.city}
+							value={filters.city || ""}
 							onChange={(e) =>
 								setFilters({ ...filters, city: e.target.value })
 							}
 							className="input-field"
 						>
 							{cities.map((city) => (
-								<option key={city} value={city}>
-									{city}
+								<option key={city.id} value={city.id}>
+									{city.name}
 								</option>
 							))}
 						</select>
@@ -93,7 +116,7 @@ export default function Analyze() {
 					<button
 						onClick={handleAnalyze}
 						className="btn-primary w-full"
-						disabled={loading}
+						disabled={loading || !filters.city}
 					>
 						Запустить анализ
 					</button>
@@ -125,8 +148,14 @@ export default function Analyze() {
 
 			{/* Карта */}
 			<div className="flex-1 relative">
-				<Map center={[55.751244, 37.618423]} zoom={12} />
-
+				{selectedCity && (
+					<Map
+						center={selectedCity.center}
+						zoom={12}
+						data={stats}
+						layer={activeLayer}
+					/>
+				)}
 				{/* Переключение слоев */}
 				<div className="absolute top-4 right-4 bg-white p-2 rounded-lg shadow-md flex gap-2 z-[400]">
 					<LayerButton
@@ -160,7 +189,7 @@ export default function Analyze() {
 	);
 }
 
-const Map = ({ center, zoom }) => {
+const Map = ({ center, zoom, data, layer }) => {
 	const mapRef = useRef(null);
 	const mapInstance = useRef(null);
 	const tileLayerRef = useRef(null);
@@ -176,11 +205,7 @@ const Map = ({ center, zoom }) => {
 
 			// Добавление тайлов OpenStreetMap
 			tileLayerRef.current = L.tileLayer(
-				"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-				{
-					attribution:
-						'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				}
+				"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 			).addTo(mapInstance.current);
 
 			// Добавление кастомного контрола зума

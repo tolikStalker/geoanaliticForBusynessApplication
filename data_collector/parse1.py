@@ -22,7 +22,7 @@ def save_to_db(data):
     cursor = conn.cursor()
     
     query = """
-        INSERT INTO cian_listings (cian_id, coordinates, price, total_areaв)
+        INSERT INTO cian_listings (cian_id, coordinates, price, total_area)
         VALUES %s
         ON CONFLICT (cian_id) DO NOTHING
     """

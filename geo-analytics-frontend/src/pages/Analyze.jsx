@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import L from "leaflet";
+import axios from "axios";
 import { SpinnerCircular } from "react-spinners-kit";
 import {
 	XMarkIcon,
@@ -26,23 +27,24 @@ export default function Analyze() {
 		rent: "",
 	});
 
-	const handleAnalyze = () => {
-		if (!filters.city) return;
+	// const handleAnalyze = () => {
+	// 	if (!filters.city) return;
 
-		setLoading(true);
-		axios
-			.get(
-				`/api/analysis?cityId=${filters.city}&radius=${filters.radius}`
-			)
-			.then((response) => {
-				setStats(response.data);
-				setLoading(false);
-			});
-	};
+	// 	setLoading(true);
+	// 	axios
+	// 		.get(
+	// 			`/api/analysis?cityId=${filters.city}&radius=${filters.radius}`
+	// 		)
+	// 		.then((response) => {
+	// 			setStats(response.data);
+	// 			setLoading(false);
+	// 		});
+	// };
 
 	// Загрузка списка городов при монтировании
 	useEffect(() => {
-		axios.get("/api/cities").then((response) => {
+		axios.get("http://127.0.0.1:5000/api/cities").then((response) => {
+			console.log("Response from API:", response.data); // Выводим данные в консоль
 			setCities(response.data);
 			if (response.data.length > 0) {
 				setFilters((prev) => ({ ...prev, city: response.data[0].id }));
@@ -114,9 +116,9 @@ export default function Analyze() {
 					</div>
 
 					<button
-						onClick={handleAnalyze}
-						className="btn-primary w-full"
-						disabled={loading || !filters.city}
+						// onClick={handleAnalyze}
+						className="btn-primary-lg w-full"
+						// disabled={loading || !filters.city}
 					>
 						Запустить анализ
 					</button>
@@ -127,15 +129,15 @@ export default function Analyze() {
 						<h4 className="font-semibold mb-2">Результаты:</h4>
 						<StatItem
 							label="Организации"
-							value={mockStats.competitors}
+							// value={mockStats.competitors}
 						/>
 						<StatItem
 							label="Население"
-							value={mockStats.population.toLocaleString()}
+							// value={mockStats.population.toLocaleString()}
 						/>
 						<StatItem
 							label="Средняя аренда"
-							value={`${mockStats.avgRent} ₽/м²`}
+							// value={`${mockStats.avgRent} ₽/м²`}
 						/>
 
 						<button className="btn-secondary w-full mt-4">

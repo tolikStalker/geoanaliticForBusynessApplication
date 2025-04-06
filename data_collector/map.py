@@ -17,7 +17,7 @@ db_params = {
 
 def get_city_coordinates(selected_city):
     query = """
-     SELECT "Название","Рейтинг","Количество_отзывов","Категория",ST_Y("Координаты") AS latitude, ST_X("Координаты") AS longitude ,"Адрес","Город" FROM organizations
+    SELECT "Название","Рейтинг","Количество_отзывов","Категория",ST_Y("Координаты") AS latitude, ST_X("Координаты") AS longitude ,"Адрес","Город" FROM organizations
     WHERE "Город" = %s;
     """
     with psycopg2.connect(**db_params) as conn, conn.cursor() as cur:

@@ -1,4 +1,12 @@
 -- CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE DATABASE diplom1
+WITH
+    OWNER = postgres ENCODING = 'UTF8' LOCALE_PROVIDER = 'libc' CONNECTION
+LIMIT
+    = -1 IS_TEMPLATE = False;
+
+CREATE EXTENSION if not EXISTS postgis;
+
 CREATE TABLE
     IF NOT EXISTS organizations (
         id SERIAL PRIMARY KEY,
@@ -26,4 +34,4 @@ CREATE TABLE
         price int,
         total_area FLOAT,
         last_updated timestamp default now ()
-    )
+    );

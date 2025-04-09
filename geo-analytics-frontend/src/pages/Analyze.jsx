@@ -1,58 +1,71 @@
-import { useState, useRef, useEffect } from "react";
-import L from "leaflet";
+import { useState, useEffect } from "react";
+import Map from "../components/Map";
 import axios from "axios";
-import { SpinnerCircular } from "react-spinners-kit";
-import {
-	XMarkIcon,
-	ChartBarIcon,
-	DocumentArrowDownIcon,
-} from "@heroicons/react/24/outline";
-
-const customIcon = new L.Icon({
-	iconUrl:
-		"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
-	iconSize: [25, 41],
-	iconAnchor: [12, 41],
-	popupAnchor: [1, -34],
-});
+import { DocumentArrowDownIcon } from "@heroicons/react/24/outline";
 
 export default function Analyze() {
 	const [loading, setLoading] = useState(false);
 	const [cities, setCities] = useState([]);
-
-	const [activeLayer, setActiveLayer] = useState("heatmap");
+	const [categories, setCategories] = useState([]);
+	const [analysisResult, setAnalysisResult] = useState(null);
 	const [filters, setFilters] = useState({
 		city: null,
-		radius: 0,
+		category: null,
+		radius: 0.5,
 		rent: "",
+		competitors: 5,
 	});
 
-	// const handleAnalyze = () => {
-	// 	if (!filters.city) return;
+	const selectedCity = cities.find((c) => c.id === filters.city);
 
-	// 	setLoading(true);
-	// 	axios
-	// 		.get(
-	// 			`/api/analysis?cityId=${filters.city}&radius=${filters.radius}`
-	// 		)
-	// 		.then((response) => {
-	// 			setStats(response.data);
-	// 			setLoading(false);
-	// 		});
-	// };
+	const handleAnalyze = () => {
+		if (!filters.city) return;
 
-	// Загрузка списка городов при монтировании
+		setLoading(true);
+		axios
+			.get("http://127.0.0.1:5000/api/analysis", {
+				params: {
+					city_id: filters.city,
+					radius: filters.radius,
+					rent: filters.rent,
+					category_id: filters.categoryId,
+					competitors: filters.competitors,
+				},
+			})
+			.then((response) => {
+				setAnalysisResult({ rental_places: response.data }); // Сохранение результатов анализа
+
+				console.log(response.data);
+				setLoading(false);
+			})
+			.catch((error) => {
+				console.error("Ошибка при запросе анализа", error);
+				setLoading(false);
+			});
+	};
+
+	// Загрузка списка городов и категорий при монтировании
 	useEffect(() => {
 		axios.get("http://127.0.0.1:5000/api/cities").then((response) => {
-			console.log("Response from API:", response.data); // Выводим данные в консоль
 			setCities(response.data);
 			if (response.data.length > 0) {
-				setFilters((prev) => ({ ...prev, city: response.data[0].id }));
+				setFilters((prevFilters) => ({
+					...prevFilters,
+					city: response.data[0].id,
+				}));
+			}
+		});
+
+		axios.get("http://127.0.0.1:5000/api/categories").then((response) => {
+			setCategories(response.data);
+			if (response.data.length > 0) {
+				setFilters((prevFilters) => ({
+					...prevFilters,
+					categoryId: response.data[0].id,
+				}));
 			}
 		});
 	}, []);
-
-	const selectedCity = cities.find((c) => c.id === filters.city);
 
 	return (
 		<div className="h-screen flex">
@@ -67,14 +80,38 @@ export default function Analyze() {
 						</label>
 						<select
 							value={filters.city || ""}
-							onChange={(e) =>
-								setFilters({ ...filters, city: e.target.value })
-							}
+							onChange={(e) => {
+								const cityId = Number(e.target.value);
+								setFilters({ ...filters, city: cityId });
+							}}
 							className="input-field"
 						>
 							{cities.map((city) => (
 								<option key={city.id} value={city.id}>
 									{city.name}
+								</option>
+							))}
+						</select>
+					</div>
+
+					<div>
+						<label className="block text-sm font-medium mb-1">
+							Категория бизнеса
+						</label>
+						<select
+							value={filters.categoryId || ""}
+							onChange={(e) => {
+								const categoryId = Number(e.target.value);
+								setFilters({
+									...filters,
+									categoryId: categoryId,
+								});
+							}}
+							className="input-field"
+						>
+							{categories.map((category) => (
+								<option key={category.id} value={category.id}>
+									{category.name}
 								</option>
 							))}
 						</select>
@@ -88,7 +125,7 @@ export default function Analyze() {
 							type="range"
 							min="0.5"
 							max="5"
-							step="0.5"
+							step="0.1"
 							value={filters.radius}
 							onChange={(e) =>
 								setFilters({
@@ -102,7 +139,28 @@ export default function Analyze() {
 
 					<div>
 						<label className="block text-sm font-medium mb-1">
-							Стоимость аренды (₽/м²)
+							Максимальное количество конкурентов:{" "}
+							{filters.competitors}
+						</label>
+						<input
+							type="range"
+							min="1"
+							max="20"
+							step="1"
+							value={filters.competitors}
+							onChange={(e) =>
+								setFilters({
+									...filters,
+									competitors: e.target.value,
+								})
+							}
+							className="w-full"
+						/>
+					</div>
+
+					<div>
+						<label className="block text-sm font-medium mb-1">
+							Стоимость аренды помещения
 						</label>
 						<input
 							type="number"
@@ -111,20 +169,20 @@ export default function Analyze() {
 								setFilters({ ...filters, rent: e.target.value })
 							}
 							className="input-field"
-							placeholder="5000"
+							placeholder="10 000"
 						/>
 					</div>
 
 					<button
-						// onClick={handleAnalyze}
+						onClick={handleAnalyze}
 						className="btn-primary-lg w-full"
-						// disabled={loading || !filters.city}
+						disabled={loading || !filters.city}
 					>
 						Запустить анализ
 					</button>
 				</div>
 
-				{!loading && (
+				{analysisResult && !loading && (
 					<div className="mt-8 pt-4 border-t">
 						<h4 className="font-semibold mb-2">Результаты:</h4>
 						<StatItem
@@ -134,6 +192,10 @@ export default function Analyze() {
 						<StatItem
 							label="Население"
 							// value={mockStats.population.toLocaleString()}
+						/>
+						<StatItem
+							label="Количество подходящих помещений"
+							value={analysisResult.rental_places.length}
 						/>
 						<StatItem
 							label="Средняя аренда"
@@ -152,36 +214,42 @@ export default function Analyze() {
 			<div className="flex-1 relative">
 				{selectedCity && (
 					<Map
-						center={selectedCity.center}
+						center={selectedCity.center} // Передаем центр города в компонент карты
 						zoom={12}
-						data={stats}
-						layer={activeLayer}
+						rentalPlaces={analysisResult?.rental_places || []}
 					/>
 				)}
 				{/* Переключение слоев */}
 				<div className="absolute top-4 right-4 bg-white p-2 rounded-lg shadow-md flex gap-2 z-[400]">
 					<LayerButton
-						active={activeLayer === "heatmap"}
-						onClick={() => setActiveLayer("heatmap")}
-						text="Тепловая карта"
+						// active={activeLayer === "heatmap"}
+						// onClick={() => setActiveLayer("heatmap")}
+						text="Помещения для аренды"
 					/>
 					<LayerButton
-						active={activeLayer === "markers"}
-						onClick={() => setActiveLayer("markers")}
+						// active={activeLayer === "markers"}
+						// onClick={() => setActiveLayer("markers")}
 						text="Организации"
 					/>
 					<LayerButton
-						active={activeLayer === "profit"}
-						onClick={() => setActiveLayer("profit")}
+						// active={activeLayer === "profit"}
+						// onClick={() => setActiveLayer("profit")}
 						text="Выгодность"
 					/>
 				</div>
 
 				{/* Лоадер */}
 				{loading && (
-					<div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+					<div className="z-400 absolute inset-0 bg-black/50 flex items-center justify-center">
 						<div className="text-center text-white">
-							<SpinnerCircular size={60} color="#fff" />
+							<div
+								className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"
+								role="status"
+							>
+								<span className="!absolute !-m-px !h-px !w-px !overflow-hidden !whitespace-nowrap !border-0 !p-0 ![clip:rect(0,0,0,0)]">
+									Loading...
+								</span>
+							</div>
 							<p className="mt-2">Идет анализ...</p>
 						</div>
 					</div>
@@ -190,50 +258,6 @@ export default function Analyze() {
 		</div>
 	);
 }
-
-const Map = ({ center, zoom, data, layer }) => {
-	const mapRef = useRef(null);
-	const mapInstance = useRef(null);
-	const tileLayerRef = useRef(null);
-
-	useEffect(() => {
-		// Инициализация карты
-		if (!mapInstance.current && mapRef.current) {
-			mapInstance.current = L.map(mapRef.current, {
-				center: center,
-				zoom: zoom,
-				zoomControl: false,
-			});
-
-			// Добавление тайлов OpenStreetMap
-			tileLayerRef.current = L.tileLayer(
-				"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-			).addTo(mapInstance.current);
-
-			// Добавление кастомного контрола зума
-			L.control
-				.zoom({
-					position: "bottomright",
-				})
-				.addTo(mapInstance.current);
-		}
-
-		// Обновление позиции и зума
-		if (mapInstance.current) {
-			mapInstance.current.setView(center, zoom);
-		}
-
-		// Очистка при размонтировании
-		return () => {
-			if (mapInstance.current) {
-				mapInstance.current.remove();
-				mapInstance.current = null;
-			}
-		};
-	}, [center, zoom]);
-
-	return <div ref={mapRef} className="h-full w-full" />;
-};
 
 const StatItem = ({ label, value }) => (
 	<div className="flex justify-between py-2">

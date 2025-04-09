@@ -1,15 +1,7 @@
 import osmnx as ox
 import psycopg2
 from psycopg2.extras import execute_values
-
-# Настройки подключения к БД
-DB_CONFIG = {
-    "dbname": "diplom1",
-    "user": "postgres",
-    "password": "chkaf042do",
-    "host": "localhost",
-    "port": "5432",
-}
+from config import db_params
 
 # Список городов для загрузки
 CITIES = [
@@ -64,7 +56,7 @@ def load_cities():
 		"""
 
     try:    
-        conn = psycopg2.connect(**DB_CONFIG)
+        conn = psycopg2.connect(**db_params)
         cursor = conn.cursor()
         
         execute_values(cursor, query, data, template="(%s, %s, ST_GeomFromEWKT(%s), %s)")

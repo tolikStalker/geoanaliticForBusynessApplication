@@ -5,15 +5,7 @@ import numpy as np
 import pandas as pd
 import psycopg2
 from folium.plugins import HeatMap
-
-
-db_params = {
-    "dbname": "diplom",
-    "user": "postgres",
-    "password": "chkaf042do",
-    "host": "localhost",
-    "port": "5432",
-}
+from config import db_params
 
 def get_city_coordinates(selected_city):
     query = """

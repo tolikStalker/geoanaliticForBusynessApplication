@@ -1,0 +1,8 @@
+# Парсинг организаций — 1-го числа каждого месяца в 3:00 ночи
+0 3 1 * * /usr/bin/python3 /home/user/scripts/parse_organizations.py >> /home/user/logs/parse_organizations.log 2>&1
+
+# Парсинг помещений для аренды — 1-го числа каждого месяца в 4:00
+0 4 1 * * /usr/bin/python3 /home/user/scripts/parse_rent_offers.py >> /home/user/logs/parse_rent_offers.log 2>&1
+
+# Обновление данных о населении — 1 января в 5:00
+0 5 1 1 * /usr/bin/python3 /home/user/scripts/update_population.py >> /home/user/logs/update_population.log 2>&1

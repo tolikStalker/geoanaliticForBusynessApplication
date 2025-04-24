@@ -3,17 +3,27 @@ import Map from "../components/Map";
 import axios from "axios";
 import { DocumentArrowDownIcon } from "@heroicons/react/24/outline";
 
+const formatNumber = (value) => {
+	if (!value && value !== 0) return ""; // Пустое значение
+	const num = parseFloat(value.toString().replace(/\D/g, "")); // Удаляем нечисловые символы
+	if (isNaN(num)) return "";
+	return num.toLocaleString("ru-RU", { minimumFractionDigits: 0 });
+};
+
 export default function Analyze() {
+	const rentPlaceholder = 10000;
+	const formattedPlaceholder = formatNumber(rentPlaceholder);
 	const [loading, setLoading] = useState(false);
 	const [cities, setCities] = useState([]);
 	const [categories, setCategories] = useState([]);
 	const [analysisResult, setAnalysisResult] = useState(null);
 	const [filters, setFilters] = useState({
 		city: null,
-		category: null,
+		categoryId: null,
 		radius: 0.5,
 		rent: "",
 		competitors: 5,
+		areaCount: 5,
 	});
 
 	const selectedCity = cities.find((c) => c.id === filters.city);
@@ -27,13 +37,15 @@ export default function Analyze() {
 				params: {
 					city_id: filters.city,
 					radius: filters.radius,
-					rent: filters.rent,
+					rent: filters.rent !== "" ? filters.rent : rentPlaceholder,
 					category_id: filters.categoryId,
 					competitors: filters.competitors,
+					area_count: filters.areaCount,
 				},
+				withCredentials: true,
 			})
 			.then((response) => {
-				setAnalysisResult({ rental_places: response.data }); // Сохранение результатов анализа
+				setAnalysisResult(response.data); // Сохранение результатов анализа
 
 				console.log(response.data);
 				setLoading(false);
@@ -46,25 +58,31 @@ export default function Analyze() {
 
 	// Загрузка списка городов и категорий при монтировании
 	useEffect(() => {
-		axios.get("http://127.0.0.1:5000/api/cities").then((response) => {
-			setCities(response.data);
-			if (response.data.length > 0) {
-				setFilters((prevFilters) => ({
-					...prevFilters,
-					city: response.data[0].id,
-				}));
-			}
-		});
+		axios
+			.get("http://127.0.0.1:5000/api/cities", { withCredentials: true })
+			.then((response) => {
+				setCities(response.data);
+				if (response.data.length > 0) {
+					setFilters((prevFilters) => ({
+						...prevFilters,
+						city: response.data[0].id,
+					}));
+				}
+			});
 
-		axios.get("http://127.0.0.1:5000/api/categories").then((response) => {
-			setCategories(response.data);
-			if (response.data.length > 0) {
-				setFilters((prevFilters) => ({
-					...prevFilters,
-					categoryId: response.data[0].id,
-				}));
-			}
-		});
+		axios
+			.get("http://127.0.0.1:5000/api/categories", {
+				withCredentials: true,
+			})
+			.then((response) => {
+				setCategories(response.data);
+				if (response.data.length > 0) {
+					setFilters((prevFilters) => ({
+						...prevFilters,
+						categoryId: response.data[0].id,
+					}));
+				}
+			});
 	}, []);
 
 	return (
@@ -160,16 +178,39 @@ export default function Analyze() {
 
 					<div>
 						<label className="block text-sm font-medium mb-1">
-							Стоимость аренды помещения
+							Количество зон ранжирования: {filters.areaCount}
 						</label>
 						<input
-							type="number"
-							value={filters.rent}
+							type="range"
+							min="1"
+							max="100"
+							step="1"
+							value={filters.areaCount}
 							onChange={(e) =>
-								setFilters({ ...filters, rent: e.target.value })
+								setFilters({
+									...filters,
+									areaCount: e.target.value,
+								})
+							}
+							className="w-full"
+						/>
+					</div>
+
+					<div>
+						<label className="block text-sm font-medium mb-1">
+							Стоимость аренды помещения (₽):
+						</label>
+						<input
+							type="text"
+							value={formatNumber(filters.rent)}
+							onChange={(e) =>
+								setFilters({
+									...filters,
+									rent: e.target.value.replace(/\s/g, ""),
+								})
 							}
 							className="input-field"
-							placeholder="10 000"
+							placeholder={formattedPlaceholder}
 						/>
 					</div>
 
@@ -187,20 +228,30 @@ export default function Analyze() {
 						<h4 className="font-semibold mb-2">Результаты:</h4>
 						<StatItem
 							label="Организации"
-							// value={mockStats.competitors}
+							value={analysisResult.competitors.length}
 						/>
 						<StatItem
 							label="Население"
-							// value={mockStats.population.toLocaleString()}
+							value={`${formatNumber(
+								analysisResult.hexs.total
+							)} чел.`}
 						/>
 						<StatItem
 							label="Количество подходящих помещений"
-							value={analysisResult.rental_places.length}
+							value={analysisResult?.rent_places.length}
 						/>
-						<StatItem
-							label="Средняя аренда"
-							// value={`${mockStats.avgRent} ₽/м²`}
-						/>
+						{analysisResult?.avg_rent && (
+							<StatItem
+								label="Средняя аренда"
+								value={`${analysisResult?.avg_rent} ₽`}
+							/>
+						)}
+						{analysisResult?.avg_rent && (
+							<StatItem
+								label="Средняя стоимость за 1 м²"
+								value={`${analysisResult?.avg_for_square} ₽/м²`}
+							/>
+						)}
 
 						<button className="btn-secondary w-full mt-4">
 							<DocumentArrowDownIcon className="h-5 w-5 mr-2" />
@@ -216,7 +267,7 @@ export default function Analyze() {
 					<Map
 						center={selectedCity.center} // Передаем центр города в компонент карты
 						zoom={12}
-						rentalPlaces={analysisResult?.rental_places || []}
+						analysisResult={analysisResult}
 					/>
 				)}
 				{/* Переключение слоев */}

@@ -1,0 +1,23 @@
+-- Таблица гексагонов
+CREATE TABLE
+    city_hexagons (
+        id VARCHAR(16) PRIMARY KEY,
+        city_id INTEGER REFERENCES city (id), -- внешний ключ на город
+        -- hex_id TEXT UNIQUE,
+        population INTEGER,
+        -- color TEXT,
+        geom GEOMETRY (POLYGON, 4326) not NULL
+    );
+
+CREATE INDEX IF NOT EXISTS city_hexagons_3857_gist ON city_hexagons USING GIST (ST_Transform (geom, 3857));
+
+-- функциональный индекс на центроиды
+CREATE INDEX IF NOT EXISTS city_hex_centroid_3857_gist ON city_hexagons USING GIST (ST_Transform (ST_Centroid (geom), 3857));
+
+-- Таблица границ города
+CREATE TABLE
+    city_boundaries (
+        id serial PRIMARY KEY,
+        city_id INTEGER REFERENCES city (id),
+        geom GEOMETRY (MULTIPOLYGON, 4326) not null
+    );

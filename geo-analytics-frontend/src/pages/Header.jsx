@@ -1,8 +1,24 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useUser } from "../components/UserContext.jsx";
 
 export default function Header() {
 	const location = useLocation();
+	const navigate = useNavigate();
+	const { user, setUser } = useUser();
 
+	// Обработчик выхода
+	const handleLogout = async () => {
+		fetch("http://localhost:5000/logout", {
+			method: "POST",
+			credentials: "include",
+		}) // Отправляем запрос на выход
+			.then(() => {
+				setUser(null); // Очищаем данные пользователя
+				navigate("/");
+				console.log("logout");
+			})
+			.catch((err) => console.error("Logout error:", err));
+	};
 	return (
 		<header className="bg-white shadow-lg z-50">
 			<nav className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
@@ -16,6 +32,18 @@ export default function Header() {
 						<Link to="/" className="btn-primary">
 							На главную
 						</Link>
+					) : user ? (
+						<div className="flex items-center space-x-4">
+							<span className="font-semibold text-blue-600">
+								{user}
+							</span>
+							<button
+								onClick={handleLogout}
+								className="btn-primary"
+							>
+								Выход
+							</button>
+						</div>
 					) : (
 						<Link to="/auth" className="btn-primary">
 							Войти

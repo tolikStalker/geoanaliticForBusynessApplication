@@ -1,15 +1,61 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { LockClosedIcon, UserCircleIcon } from "@heroicons/react/24/outline";
+import { useUser } from "../components/UserContext.jsx";
 
 export default function Auth() {
 	const [isLogin, setIsLogin] = useState(true);
+	const [error, setError] = useState("");
 	const navigate = useNavigate();
+	const { setUser } = useUser();
 
-	const handleSubmit = (e) => {
+	const handleSubmit = async (e) => {
 		e.preventDefault();
-		// Логика авторизации/регистрации
-		navigate("/analyze");
+		setError("");
+		const form = e.target;
+		const formUsername = form.username.value.trim();
+		const formPassword = form.password.value.trim();
+
+		// Валидация email
+		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+		if (!emailRegex.test(formUsername)) {
+			setError("Введите корректный email.");
+			return;
+		}
+
+		// Валидация пароля
+		if (formPassword.length < 6) {
+			setError("Пароль должен содержать минимум 6 символов.");
+			return;
+		}
+
+		const endpoint = isLogin ? "/login" : "/register";
+
+		try {
+			const response = await fetch(`http://localhost:5000${endpoint}`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				credentials: "include", // сохраняет cookie сессии
+				body: JSON.stringify({
+					username: formUsername,
+					password: formPassword,
+				}),
+			});
+
+			const data = await response.json();
+
+			if (!response.ok) {
+				throw new Error(data.error || "Ошибка авторизации");
+			}
+
+			setUser(formUsername);
+			// Успешный вход или регистрация
+			navigate("/analyze");
+		} catch (err) {
+			setError(err.message);
+		}
 	};
 
 	return (
@@ -23,6 +69,12 @@ export default function Auth() {
 					{isLogin ? "Вход в систему" : "Регистрация"}
 				</h2>
 
+				{error && (
+					<p className="text-red-600 text-sm text-center mt-2">
+						{error}
+					</p>
+				)}
+
 				<form onSubmit={handleSubmit} className="space-y-4">
 					<div>
 						<label className="block text-sm font-medium mb-1">
@@ -30,6 +82,7 @@ export default function Auth() {
 						</label>
 						<input
 							type="email"
+							name="username"
 							required
 							className="input-field"
 							placeholder="example@mail.com"
@@ -42,6 +95,7 @@ export default function Auth() {
 						</label>
 						<input
 							type="password"
+							name="password"
 							required
 							className="input-field"
 							placeholder="••••••••"

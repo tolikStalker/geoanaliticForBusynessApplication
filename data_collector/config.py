@@ -1,4 +1,3 @@
-# config.py
 import json
 
 with open("DB/config.json", "r", encoding="utf-8") as f:

@@ -2,18 +2,29 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Home from "./pages/Home.jsx";
 import Auth from "./pages/Auth.jsx";
 import Analyze from "./pages/Analyze.jsx";
-import Layout from "./components/Layout";
+import Layout from "./components/Layout.jsx";
+import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import { UserProvider } from "./components/UserContext.jsx";
 
 export default function App() {
 	return (
-		<BrowserRouter>
-			<Routes>
-				<Route path="/" element={<Layout />}>
-					<Route index element={<Home />} />
-					<Route path="/auth" element={<Auth />} />
-					<Route path="/analyze" element={<Analyze />} />
-				</Route>
-			</Routes>
-		</BrowserRouter>
+		<UserProvider>
+			<BrowserRouter>
+				<Routes>
+					<Route path="/" element={<Layout />}>
+						<Route index element={<Home />} />
+						<Route path="/auth" element={<Auth />} />
+						<Route
+							path="/analyze"
+							element={
+								<ProtectedRoute>
+									<Analyze />
+								</ProtectedRoute>
+							}
+						/>
+					</Route>
+				</Routes>
+			</BrowserRouter>
+		</UserProvider>
 	);
 }

@@ -30,10 +30,12 @@ def parse_coordinates(coord_str):
 
 def parse_snippet(snippet):
     try:
-
-        address = snippet.find_element(
-            By.CLASS_NAME, "search-business-snippet-view__address"
-        ).text
+        try:
+            address = snippet.find_element(
+                By.CLASS_NAME, "search-business-snippet-view__address"
+            ).text
+        except NoSuchElementException:
+            address = None
 
         # if selectedCity['name'] not in address:
         #     return
@@ -127,7 +129,7 @@ for selectedCity in city:
     print(f"Поиск города {selectedCity['name']}...")
     if not search_and_click(selectedCity["name"]):
         print("Ошибка поиска города.")
-        
+
     for selectedCategory in category:
 
         time.sleep(1.5)  # пауза, чтобы поиск обновился
@@ -194,26 +196,34 @@ for selectedCity in city:
                 conn = psycopg2.connect(**db_params)
                 cursor = conn.cursor()
 
-                org_insert_query = """
-                    INSERT INTO organizations (name, rate, rate_count, coordinates, address,city_id)
-                    VALUES %s
-                    ON CONFLICT (name, coordinates) DO UPDATE
-                        SET name = EXCLUDED.name  -- фиктивное обновление
-                    RETURNING id, name, coordinates;
+                values_sql = ",".join(
+                    cursor.mogrify("(%s, %s, %s, %s, %s, %s)", row).decode()
+                    for row in data_batch
+                )
+                query = f"""
+                    INSERT INTO organizations (name, rate, rate_count, coordinates, address, city_id)
+                    VALUES {values_sql}
+                    ON CONFLICT DO NOTHING
+                    RETURNING id;
                 """
+                cursor.execute(query)
+                conn.commit()
+                inserted_orgs = [org[0] for org in cursor.fetchall()]
+                if inserted_orgs:
+                    print(f"Inserted organizations: {inserted_orgs}")
+                else:
+                    print("No organizations were inserted.")
 
-                execute_values(cursor, org_insert_query, data_batch, fetch=True)
-                inserted_orgs = cursor.fetchall()
-                org_cat_pairs = [
-                    (org_id, category_id) for org_id, _, _ in inserted_orgs
-                ]
+                org_cat_pairs = [(org_id, category_id) for org_id in inserted_orgs]
                 org_cat_query = """
                     INSERT INTO organization_categories (organization_id, category_id)
                     VALUES %s
                     ON CONFLICT DO NOTHING;
                 """
-                execute_values(cursor, org_cat_query, org_cat_pairs)
-
+                if org_cat_pairs:
+                    execute_values(cursor, org_cat_query, org_cat_pairs)
+                else:
+                    print("No category pairs to insert.")
                 conn.commit()
                 cursor.close()
                 conn.close()

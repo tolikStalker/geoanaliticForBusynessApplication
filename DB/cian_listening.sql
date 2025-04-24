@@ -4,6 +4,6 @@ CREATE TABLE
         city_id INT REFERENCES city(id),
         coordinates geometry (POINT, 4326),
         price int,
-        total_area FLOAT,
+        total_area DECIMAL(3,1),
         last_updated timestamp default now ()
     );

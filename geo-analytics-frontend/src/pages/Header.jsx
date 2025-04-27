@@ -34,9 +34,12 @@ export default function Header() {
 						</Link>
 					) : user ? (
 						<div className="flex items-center space-x-4">
-							<span className="font-semibold text-blue-600">
+							<Link
+								to="/profile"
+								className="font-semibold text-blue-600"
+							>
 								{user}
-							</span>
+							</Link>
 							<button
 								onClick={handleLogout}
 								className="btn-primary"

@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session, current_app
 from app.models import (
     City,
     Organization,
@@ -7,6 +7,7 @@ from app.models import (
     Hexagon,
     CityBound,
     User,
+    AnalysisRequest,
 )
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -17,9 +18,195 @@ from shapely.wkb import loads as load_wkb
 from shapely.geometry import mapping
 from geoalchemy2.shape import to_shape
 import h3
-from app.models import Hexagon, Organization
+from datetime import datetime
 
 main_bp = Blueprint("main", __name__)
+
+MIN_RADIUS = 0.5
+MAX_RADIUS = 5.0
+MIN_RENT = 0
+MAX_RENT = 100000000
+MIN_COMPETITORS = 1
+MAX_COMPETITORS = 20
+MIN_AREA_COUNT = 1
+MAX_AREA_COUNT = 100
+# --- ---
+
+
+# --- Функция для валидации параметров ---
+def validate_analysis_params(args):
+    """
+    Валидирует параметры запроса вручную.
+    Возвращает кортеж: (validated_data, errors)
+    validated_data: Словарь с проверенными и преобразованными данными, если нет ошибок.
+    errors: Словарь с ошибками {field: message}, если есть ошибки.
+    """
+    errors = {}
+    validated_data = {}
+    required_params = [
+        "city_id",
+        "category_id",
+        "radius",
+        "rent",
+        "competitors",
+        "area_count",
+    ]
+
+    # 1. Проверка наличия обязательных параметров
+    for param in required_params:
+        if param not in args:
+            errors[param] = f"Параметр '{param}' обязателен."
+    if (
+        errors
+    ):  # Если не хватает параметров, дальше можно не проверять типы/значения для них
+        return None, errors
+
+    # 2. Проверка типов и значений
+    # City ID
+    try:
+        city_id_val = int(args["city_id"])
+        if city_id_val <= 0:
+            errors["city_id"] = "ID города должен быть положительным числом."
+        else:
+            validated_data["city_id"] = city_id_val
+    except (ValueError, TypeError):
+        errors["city_id"] = "ID города должен быть целым числом."
+
+    # Category ID
+    try:
+        category_id_val = int(args["category_id"])
+        if category_id_val <= 0:
+            errors["category_id"] = "ID категории должен быть положительным числом."
+        else:
+            validated_data["category_id"] = category_id_val
+    except (ValueError, TypeError):
+        errors["category_id"] = "ID категории должен быть целым числом."
+
+    # Radius
+    try:
+        radius_val = float(args["radius"])
+        if not (MIN_RADIUS <= radius_val <= MAX_RADIUS):
+            errors["radius"] = (
+                f"Радиус должен быть между {MIN_RADIUS} и {MAX_RADIUS} км."
+            )
+        else:
+            validated_data["radius"] = radius_val
+    except (ValueError, TypeError):
+        errors["radius"] = "Радиус должен быть числом."
+
+    # Rent
+    try:
+        rent_val = int(args["rent"])  # Используем int как в оригинальном коде
+        if not (MIN_RENT <= rent_val <= MAX_RENT):
+            errors["rent"] = (
+                f"Стоимость аренды должна быть от {MIN_RENT} до {MAX_RENT}."
+            )
+        else:
+            validated_data["rent"] = rent_val
+    except (ValueError, TypeError):
+        errors["rent"] = "Стоимость аренды должна быть целым числом."
+
+    # Competitors
+    try:
+        competitors_val = int(args["competitors"])
+        if not (MIN_COMPETITORS <= competitors_val <= MAX_COMPETITORS):
+            errors["competitors"] = (
+                f"Макс. кол-во конкурентов должно быть от {MIN_COMPETITORS} до {MAX_COMPETITORS}."
+            )
+        else:
+            validated_data["competitors"] = competitors_val
+    except (ValueError, TypeError):
+        errors["competitors"] = "Макс. кол-во конкурентов должно быть целым числом."
+
+    # Area Count
+    try:
+        area_count_val = int(args["area_count"])
+        if not (MIN_AREA_COUNT <= area_count_val <= MAX_AREA_COUNT):
+            errors["area_count"] = (
+                f"Количество зон должно быть от {MIN_AREA_COUNT} до {MAX_AREA_COUNT}."
+            )
+        else:
+            validated_data["area_count"] = area_count_val
+    except (ValueError, TypeError):
+        errors["area_count"] = "Количество зон должно быть целым числом."
+
+    if errors:
+        return None, errors
+    else:
+        return validated_data, None
+
+
+@main_bp.before_request
+def before_request_handler():
+    # Делаем сессию постоянной, чтобы PERMANENT_SESSION_LIFETIME работало
+    # и время жизни cookie обновлялось при каждой активности
+    session.permanent = True
+
+    # Продлеваем время жизни сессии при каждой активности
+    # Flask автоматически обновит cookie, если session.permanent = True
+    # и данные сессии меняются (мы будем менять 'last_activity')
+
+    if current_user.is_authenticated:
+        # Проверяем время последней активности
+        now = datetime.utcnow()
+        last_activity_str = session.get("last_activity")
+
+        if last_activity_str:
+            try:
+                # Преобразуем строку обратно в datetime
+                # Используем isoformat() для надежного хранения/чтения
+                last_activity = datetime.fromisoformat(last_activity_str)
+
+                # Рассчитываем время неактивности
+                inactivity_duration = now - last_activity
+                max_inactivity = (
+                    current_app.permanent_session_lifetime
+                )  # Получаем из конфига
+
+                # Если неактивность превысила лимит
+                if inactivity_duration > max_inactivity:
+                    logout_user()
+                    session.clear()  # Очищаем всю сессию на всякий случай
+                    # flash('Ваша сессия истекла из-за неактивности.', 'info') # Опционально: сообщение для пользователя (если есть обработка flash)
+                    print(
+                        f"User {current_user} logged out due to inactivity."
+                    )  # Логгирование
+                    # Можно сделать редирект на login, но для API это не нужно,
+                    # фронтенд сам обработает 401 при следующем запросе
+                    return  # Прерываем дальнейшую обработку запроса после logout
+            except (ValueError, TypeError):
+                # Ошибка парсинга даты - лучше сбросить сессию
+                logout_user()
+                session.clear()
+                print("Error parsing last_activity, logging out user.")
+                return
+
+        # Обновляем время последней активности в сессии, если пользователь еще активен
+        # Преобразуем в строку ISO формата для хранения в сессии (JSON-сериализуемо)
+        session["last_activity"] = now.isoformat()
+
+
+@main_bp.route("/api/history", methods=["GET"])
+@login_required  # Обязательно для получения истории текущего пользователя
+def get_analysis_history():
+    """Получение истории запросов анализа для текущего пользователя"""
+    try:
+        user_history = (
+            AnalysisRequest.query.filter_by(user_id=current_user.id)
+            .order_by(AnalysisRequest.created_at.desc())
+            .limit(50)
+            .all()
+        )
+
+        history_list = [item.to_dict() for item in user_history]
+
+        return jsonify(history_list)
+
+    except Exception as e:
+        current_app.logger.error(
+            f"Error fetching history for user {current_user.id}: {e}"
+        )
+        return jsonify({"message": "Не удалось получить историю запросов."}), 500
 
 
 @main_bp.route("/api/cities", methods=["GET"])
@@ -72,24 +259,37 @@ def get_categories():
     print(f"Ответ: {result}")  # Логирование данных перед отправкой
     return jsonify(result[1:])
 
-
+from flask import current_app
 @main_bp.route("/api/analysis", methods=["GET"])
+@login_required
 def get_analysis():
     """Основной метод анализа данных"""
-    try:
-        city_id = int(request.args.get("city_id"))
-        category_id = int(request.args.get("category_id"))
-        radius_km = float(request.args.get("radius", 1))
-        rent_limit = int(request.args.get("rent", 10000))
-        maxCompetitorsCount = int(request.args.get("competitors"))
-        n = int(request.args.get("area_count"))
+    validated_data, validation_errors = validate_analysis_params(request.args)
+    if validation_errors:
+        return (
+            jsonify(
+                {
+                    "message": "Ошибка валидации параметров запроса.",
+                    "errors": validation_errors,  # Словарь {field: message}
+                }
+            ),
+            400,
+        )
 
-    except (TypeError, ValueError):
-        return jsonify({"error": "Invalid parameters"}), 400
-
-    city = City.query.get(city_id)
+    city_id = validated_data["city_id"]
+    category_id = validated_data["category_id"]
+    radius_km = validated_data["radius"]
+    rent_limit = validated_data["rent"]
+    max_competitors_count = validated_data["competitors"]
+    n_areas = validated_data["area_count"]
+    current_app.logger.info(f"User ID: {current_user.id}, City ID: {city_id}, Category ID: {category_id}")
+    city = City.query.get(city_id) 
     if not city:
-        return jsonify({"error": "City not found"}), 404
+        return jsonify({"message": f"Город с ID {city_id} не найден."}), 404
+
+    category = Category.query.get(category_id) 
+    if not category:
+        return jsonify({"message": f"Категория с ID {category_id} не найдена."}), 404
 
     rent_places = get_rental_places(city_id, rent_limit)
     competitors = get_competitors(city_id, category_id)
@@ -102,17 +302,41 @@ def get_analysis():
         competitors,
         10,
         radius_m,
-        maxCompetitorsCount,
-        n,
+        max_competitors_count,
+        n_areas,
     )
+    print(current_user.id)
+
+    try:
+        history_entry = AnalysisRequest(
+            user_id=current_user.id,
+            city_id=city_id,
+            category_id=category_id,
+            radius=validated_data["radius"],
+            rent=validated_data["rent"],
+            max_competitors=validated_data["competitors"],
+            area_count=validated_data["area_count"],
+        )
+        db.session.add(history_entry)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()  # Откатываем транзакцию в случае ошибки сохранения
+        current_app.logger.error(
+            f"Failed to save analysis history for user {current_user.id}: {e}"
+        )
+        
+
 
     return jsonify(
         {
+            "user":current_user.id,
             "locations": locations,  # Список найденных локаций
             "circle_radius_km": radius_km,
             "rent_places": rent_places,
             "avg_rent": calculate_avg_rent(rent_places) if rent_places else None,
-            "avg_for_square": calculate_avg_cost_for_square(rent_places) if rent_places else None,
+            "avg_for_square": (
+                calculate_avg_cost_for_square(rent_places) if rent_places else None
+            ),
             "competitors": competitors,
             "bounds": get_bound(city_id),
             "hexs": hexs_geojson,
@@ -335,7 +559,7 @@ def find_top_zones(hexs, orgs, resolution, radius_m, max_comp, n):
             "center": [lat, lon],
         }
 
-    # 5. Greedy отбор n зон
+    # 4. Жадный отбор n зон
 
     sorted_cells = sorted(
         candidates.items(),

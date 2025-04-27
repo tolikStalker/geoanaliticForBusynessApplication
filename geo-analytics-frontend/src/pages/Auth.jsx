@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LockClosedIcon, UserCircleIcon } from "@heroicons/react/24/outline";
 import { useUser } from "../components/UserContext.jsx";
+import axios from "axios";
 
 export default function Auth() {
 	const [isLogin, setIsLogin] = useState(true);
@@ -32,29 +33,29 @@ export default function Auth() {
 		const endpoint = isLogin ? "/login" : "/register";
 
 		try {
-			const response = await fetch(`http://localhost:5000${endpoint}`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				credentials: "include", // сохраняет cookie сессии
-				body: JSON.stringify({
+			await axios.post(
+				`http://localhost:5000${endpoint}`,
+				{
 					username: formUsername,
 					password: formPassword,
-				}),
-			});
-
-			const data = await response.json();
-
-			if (!response.ok) {
-				throw new Error(data.error || "Ошибка авторизации");
-			}
+				},
+				{
+					headers: {
+						"Content-Type": "application/json",
+					},
+					withCredentials: true, // сохраняет сессионные куки
+				}
+			);
 
 			setUser(formUsername);
 			// Успешный вход или регистрация
 			navigate("/analyze");
 		} catch (err) {
-			setError(err.message);
+			if (err.response && err.response.data && err.response.data.error) {
+				setError(err.response.data.error);
+			} else {
+				setError(err.message || "Ошибка авторизации");
+			}
 		}
 	};
 

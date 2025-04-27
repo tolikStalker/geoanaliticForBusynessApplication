@@ -1,8 +1,8 @@
 -- Таблица гексагонов
 CREATE TABLE
-    city_hexagons (
+    if NOT exists city_hexagons (
         id VARCHAR(16) PRIMARY KEY,
-        city_id INTEGER REFERENCES city (id), -- внешний ключ на город
+        city_id BIGINT REFERENCES city (id), -- внешний ключ на город
         -- hex_id TEXT UNIQUE,
         population INTEGER,
         -- color TEXT,
@@ -16,8 +16,8 @@ CREATE INDEX IF NOT EXISTS city_hex_centroid_3857_gist ON city_hexagons USING GI
 
 -- Таблица границ города
 CREATE TABLE
-    city_boundaries (
+    if NOT exists city_boundaries (
         id serial PRIMARY KEY,
-        city_id INTEGER REFERENCES city (id),
+        city_id BIGINT REFERENCES city (id),
         geom GEOMETRY (MULTIPOLYGON, 4326) not null
     );

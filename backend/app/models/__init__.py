@@ -6,3 +6,4 @@ from .organization_categories import OrganizationCategory
 from .hex import Hexagon
 from .bound import CityBound
 from .user import User
+from .requests import AnalysisRequest

@@ -12,3 +12,4 @@ class City(db.Model):
     cian_listings = db.relationship("CianListing", back_populates="city")
     city_hexagons = db.relationship("Hexagon", back_populates="city")
     city_boundaries = db.relationship("CityBound", back_populates="city")
+    requests = db.relationship("AnalysisRequest", back_populates="city")

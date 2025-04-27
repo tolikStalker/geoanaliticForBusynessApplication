@@ -3,13 +3,46 @@ import L from "leaflet";
 import { scaleLog } from "d3-scale";
 import { interpolateRdYlGn } from "d3-scale-chromatic";
 
-const customIcon = new L.Icon({
+const rentIconUrl =
+	"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png"; // Пример: зеленый маркер
+const competitorIconUrl =
+	"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png"; // Пример: красный маркер
+
+const rentIcon = new L.Icon({
+	iconUrl: rentIconUrl,
+	iconSize: [25, 41], // Подберите размер под вашу CDN иконку
+	iconAnchor: [12, 41], // Подберите якорь
+	popupAnchor: [1, -34], // Подберите якорь попапа
+	shadowSize: [41, 41], // Размер тени
+});
+
+const competitorIcon = new L.Icon({
+	iconUrl: competitorIconUrl,
+	iconSize: [25, 41], // Подберите размер
+	iconAnchor: [12, 41], // Подберите якорь
+	popupAnchor: [1, -34], // Подберите якорь попапа
+	shadowSize: [41, 41],
+});
+
+// Fallback default icon (оставляем стандартный)
+const defaultIcon = L.icon({
+	iconRetinaUrl:
+		"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
 	iconUrl:
 		"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
 	iconSize: [25, 41],
 	iconAnchor: [12, 41],
 	popupAnchor: [1, -34],
+	shadowSize: [41, 41],
 });
+
+L.Marker.prototype.options.icon = defaultIcon;
+const formatNumber = (value) => {
+	if (value === "" || value === null || value === undefined) return "";
+	const num = parseFloat(value.toString().replace(/\D/g, "")); // Удаляем нечисловые символы
+	if (isNaN(num)) return "";
+	return num.toLocaleString("ru-RU", { minimumFractionDigits: 0 });
+};
 
 function getHexColor(pop, popMax) {
 	if (!pop || pop <= 0 || !popMax || popMax <= 0) return "#f7fcb9"; // безопасный цвет
@@ -19,29 +52,40 @@ function getHexColor(pop, popMax) {
 	return interpolateRdYlGn(scale(pop)); // от светло-желтого к зелёному
 }
 
-export default function Map({ center, zoom, analysisResult }) {
+export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 	const mapRef = useRef(null);
 	const mapInstance = useRef(null);
-	const layerRefs = useRef({
-		bounds: null,
-		hexs: null,
-		legend: null,
-		circles: null,
-	});
 	const hexStyle = (feature) => {
-		// Предполагаем, что население хранится в feature.properties.population
+		// население хранится в feature.properties.population
 		const pop = feature.properties.pop;
+		const maxPop = analysisResult?.hexs?.max;
 		return {
-			fillColor: getHexColor(pop, analysisResult.hexs.max),
+			fillColor: getHexColor(pop, maxPop),
 			weight: 1,
 			opacity: 0.3,
 			color: "gray",
 			fillOpacity: 0.5,
 		};
 	};
-
-	// const tileLayerRef = useRef(null);
-	const markersRef = useRef([]);
+	const layerGroups = useRef({
+		bounds: L.geoJSON(null, {
+			style: { color: "red", weight: 2, fillOpacity: 0.1 },
+		}),
+		population: L.geoJSON(null, {
+			// Use GeoJSON for hex grid
+			style: hexStyle, // Define hexStyle function below or inline
+			onEachFeature: (feature, layer) => {
+				const pop = feature?.properties?.pop ?? "N/A";
+				layer.bindPopup(
+					`<b>Население:</b> ${pop.toLocaleString()} чел.`
+				);
+			},
+		}),
+		rent: L.layerGroup(),
+		competitors: L.layerGroup(),
+		zones: L.layerGroup(),
+		legend: null, // To store the legend control instance
+	});
 
 	useEffect(() => {
 		// Инициализация карты
@@ -53,9 +97,10 @@ export default function Map({ center, zoom, analysisResult }) {
 			});
 
 			// Добавление тайлов OpenStreetMap
-			L.tileLayer(
-				"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-			).addTo(mapInstance.current);
+			L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+				attribution:
+					'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+			}).addTo(mapInstance.current);
 
 			// Добавление кастомного контрола зума
 			L.control
@@ -63,107 +108,165 @@ export default function Map({ center, zoom, analysisResult }) {
 					position: "bottomright",
 				})
 				.addTo(mapInstance.current);
-		}
 
-		// Обновление позиции и зума
-		if (mapInstance.current) {
+			layerGroups.current.bounds.addTo(mapInstance.current);
+		} else if (mapInstance.current) {
 			mapInstance.current.setView(center, zoom);
 		}
 
 		// Очистка при размонтировании
 		return () => {
 			if (mapInstance.current) {
+				// Clean up layer groups and controls before removing map
+				Object.values(layerGroups.current).forEach((layer) => {
+					if (layer && mapInstance.current.hasLayer(layer)) {
+						mapInstance.current.removeLayer(layer);
+					}
+				});
+
+				if (layerGroups.current.legend) {
+					mapInstance.current.removeControl(
+						layerGroups.current.legend
+					);
+				}
 				mapInstance.current.remove();
 				mapInstance.current = null;
+				layerGroups.current = {
+					// Reset refs
+					bounds: L.geoJSON(null, {
+						style: { color: "red", weight: 2, fillOpacity: 0.1 },
+					}),
+					population: L.geoJSON(null, {
+						style: hexStyle,
+						onEachFeature: (f, l) => {
+							/* popup */
+						},
+					}),
+					rent: L.layerGroup(),
+					competitors: L.layerGroup(),
+					zones: L.layerGroup(),
+					legend: null,
+				};
 			}
 		};
 	}, [center, zoom]);
 
 	useEffect(() => {
-		if (!mapInstance.current) return;
+		if (!mapInstance.current || !analysisResult) {
+			// Clear all dynamic layers if analysisResult becomes null
+			layerGroups.current.bounds.clearLayers();
+			layerGroups.current.population.clearLayers();
+			layerGroups.current.rent.clearLayers();
+			layerGroups.current.competitors.clearLayers();
+			layerGroups.current.zones.clearLayers();
+
+			if (layerGroups.current.legend) {
+				mapInstance.current.removeControl(layerGroups.current.legend);
+				layerGroups.current.legend = null;
+			}
+			return;
+		}
 
 		// Если слой границ уже добавлен, удаляем его
-		if (layerRefs.current.bounds) {
-			mapInstance.current.removeLayer(layerRefs.current.bounds);
-			layerRefs.current.bounds = null;
-		}
-		// Если слой гексагонов уже добавлен, удаляем его
-		if (layerRefs.current.hexs) {
-			mapInstance.current.removeLayer(layerRefs.current.hexs);
-			layerRefs.current.hexs = null;
-		}
-		// Удаляем предыдущую легенду
-		if (layerRefs.current.legend) {
-			mapInstance.current.removeControl(layerRefs.current.legend);
-			layerRefs.current.legend = null;
-		}
+		layerGroups.current.bounds.clearLayers();
+		layerGroups.current.population.clearLayers();
+		layerGroups.current.rent.clearLayers();
+		layerGroups.current.competitors.clearLayers();
+		layerGroups.current.zones.clearLayers();
 
-		// Удаление старых маркеров
-		markersRef.current.forEach((marker) => marker.remove());
-		markersRef.current = [];
-
-		// Удаляем старые круги (если захочешь хранить в layerRefs.current.circles)
-		(layerRefs.current.circles || []).forEach((circle) => circle.remove());
-		layerRefs.current.circles = [];
+		if (
+			layerGroups.current.legend &&
+			mapInstance.current.hasControl(layerGroups.current.legend)
+		) {
+			mapInstance.current.removeControl(layerGroups.current.legend);
+			layerGroups.current.legend = null;
+		}
 
 		// Добавляем границы города
-		if (analysisResult?.bounds) {
-			layerRefs.current.bounds = L.geoJSON(analysisResult.bounds, {
-				style: { color: "red", weight: 2, fillOpacity: 0.1 },
-			}).addTo(mapInstance.current);
+		if (analysisResult.bounds) {
+			layerGroups.current.bounds.addData(analysisResult.bounds);
 		}
 
 		// Добавляем гексагоны
-		if (analysisResult?.hexs) {
-			layerRefs.current.hexs = L.geoJSON(analysisResult.hexs, {
-				style: hexStyle,
-				onEachFeature: (feature, layer) => {
-					const pop = feature.properties.pop;
-					layer.bindPopup(`<b>Население:</b> ${pop} чел.`);
-				},
-			}).addTo(mapInstance.current);
+		if (analysisResult.hexs) {
+			// Re-apply style based on potentially new max value
+			layerGroups.current.population.options.style = hexStyle;
+			layerGroups.current.population.addData(analysisResult.hexs);
 		}
 
-		if (analysisResult?.locations?.length) {
-			analysisResult.locations.forEach((loc) => {
-				const [lat, lon] = loc.center;
-
-				const circle = L.circle([lat, lon], {
-					radius: analysisResult.circle_radius_km * 1000,
-					color: "blue",
-					weight: 2,
-					fillOpacity: 0.1,
-				})
-					.bindPopup(
-						`<b>Население:</b> ${loc.pop_sum.toLocaleString()}`
-					)
-					.addTo(mapInstance.current);
-
-				layerRefs.current.circles.push(circle);
-			});
-		}
-
-		// Добавление новых маркеров
-		if (mapInstance.current && analysisResult?.rent_places.length > 0) {
+		if (analysisResult.rent_places?.length > 0) {
 			analysisResult.rent_places.forEach((place) => {
-				const marker = L.marker(place.coordinates, { icon: customIcon })
-					.bindPopup(
-						`<b>Ссылка:</b> <a href="https://rostov.cian.ru/rent/commercial/${place.id}" target="_blank">Посмотреть</a><br><b>Стоимость:</b> ${place.price} ₽<br><b>Площадь:</b> ${place.total_area} м²`
-					)
-					.addTo(mapInstance.current);
-				markersRef.current.push(marker);
+				if (place.coordinates && place.coordinates.length === 2) {
+					// Basic validation
+					const marker = L.marker(place.coordinates, {
+						icon: rentIcon,
+					}) // Use custom icon
+						.bindPopup(
+							`<b>Аренда:</b> <a href="https://cian.ru/rent/commercial/${
+								place.id
+							}" target="_blank" rel="noopener noreferrer">ID ${
+								place.id
+							}</a><br><b>Стоимость:</b> ${formatNumber(
+								place.price
+							)} ₽<br><b>Площадь:</b> ${place.total_area} м²`
+						);
+					layerGroups.current.rent.addLayer(marker);
+				} else {
+					console.warn(
+						"Invalid coordinates for rent place:",
+						place.id
+					);
+				}
 			});
 		}
 
 		// Добавление новых маркеров
-		if (mapInstance.current && analysisResult?.competitors.length > 0) {
+		if (analysisResult.competitors?.length > 0) {
 			analysisResult.competitors.forEach((place) => {
-				const marker = L.marker(place.coordinates, { icon: customIcon })
-					.bindPopup(
-						`<b>${place.name}</b><br><b>Рейтинг:</b> ${place.rate}<br><b>Количество отзывов:</b> ${place.rate_count}`
-					)
-					.addTo(mapInstance.current);
-				markersRef.current.push(marker);
+				if (place.coordinates && place.coordinates.length === 2) {
+					// Basic validation
+					const marker = L.marker(place.coordinates, {
+						icon: competitorIcon,
+					}) // Use custom icon
+						.bindPopup(
+							`<b>${
+								place.name || "Конкурент"
+							}</b><br><b>Рейтинг:</b> ${
+								place.rate ?? "N/A"
+							}<br><b>Отзывов:</b> ${place.rate_count ?? "N/A"}`
+						);
+					layerGroups.current.competitors.addLayer(marker);
+				} else {
+					console.warn(
+						"Invalid coordinates for competitor:",
+						place.id || place.name
+					);
+				}
+			});
+		}
+
+		// Добавление новых маркеров
+		if (
+			analysisResult.locations?.length > 0 &&
+			analysisResult.circle_radius_km
+		) {
+			analysisResult.locations.forEach((loc) => {
+				if (loc.center && loc.center.length === 2) {
+					const [lat, lon] = loc.center;
+					const circle = L.circle([lat, lon], {
+						radius: analysisResult.circle_radius_km * 1000,
+						color: "blue",
+						weight: 2,
+						fillOpacity: 0.1,
+					}).bindPopup(
+						`<b>Расч. население:</b> ${
+							loc.pop_sum?.toLocaleString() ?? "N/A"
+						}`
+					);
+					layerGroups.current.zones.addLayer(circle);
+				} else {
+					console.warn("Invalid center for location zone:", loc);
+				}
 			});
 		}
 
@@ -173,7 +276,7 @@ export default function Map({ center, zoom, analysisResult }) {
 			legend.onAdd = function () {
 				const div = L.DomUtil.create(
 					"div",
-					"info legend bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-md space-y-2 min-w-[300px]"
+					"info legend bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-md space-y-2 min-w-[250px]"
 				);
 				const maxPop = analysisResult.hexs.max;
 
@@ -231,10 +334,52 @@ export default function Map({ center, zoom, analysisResult }) {
 				return div;
 			};
 
-			legend.addTo(mapInstance.current);
-			layerRefs.current.legend = legend;
+			layerGroups.current.legend = legend; // Store the legend instance
+
+			if (visibleLayers?.population && mapInstance.current) {
+				legend.addTo(mapInstance.current);
+			}
 		}
 	}, [analysisResult]);
+
+	useEffect(() => {
+		if (!mapInstance.current || !visibleLayers) return;
+
+		Object.keys(visibleLayers).forEach((key) => {
+			const layer = layerGroups.current[key]; // Get layer group or control by key
+			const shouldBeVisible = visibleLayers[key];
+
+			if (!layer) return; // Skip if layer group doesn't exist for this key
+
+			// Handle Layer Groups
+			if (layer instanceof L.Layer) {
+				// Check if it's a Leaflet layer/group
+				if (shouldBeVisible && !mapInstance.current.hasLayer(layer)) {
+					mapInstance.current.addLayer(layer);
+				} else if (
+					!shouldBeVisible &&
+					mapInstance.current.hasLayer(layer)
+				) {
+					mapInstance.current.removeLayer(layer);
+				}
+			}
+			// Handle Legend Control separately
+			else if (key === "legend" && layer instanceof L.Control) {
+				if (
+					visibleLayers.population &&
+					!mapInstance.current.hasControl(layer)
+				) {
+					// Legend visibility depends on population layer
+					layer.addTo(mapInstance.current);
+				} else if (
+					!visibleLayers.population &&
+					mapInstance.current.hasControl(layer)
+				) {
+					mapInstance.current.removeControl(layer);
+				}
+			}
+		});
+	}, [visibleLayers, analysisResult]);
 
 	return <div ref={mapRef} className="h-full w-full" />;
 }

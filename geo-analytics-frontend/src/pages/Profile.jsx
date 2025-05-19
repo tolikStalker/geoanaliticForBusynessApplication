@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { useUser } from "../components/UserContext.jsx"; // Если нужно показать имя пользователя
+import { useUser } from "../components/UserContext.jsx";
 import { useNavigate } from "react-router-dom";
 
 const formatDate = (isoString) => {
@@ -16,7 +16,7 @@ const formatDate = (isoString) => {
 		});
 	} catch (error) {
 		console.error("Error formatting date:", error);
-		return isoString; // Возвращаем исходную строку в случае ошибки
+		return isoString;
 	}
 };
 
@@ -39,39 +39,36 @@ export default function Profile() {
 				const response = await axios.get(
 					"http://localhost:5000/api/history",
 					{
-						withCredentials: true, // Важно для отправки сессионной cookie
+						withCredentials: true,
 					}
 				);
-				setHistory(response.data || []); // Устанавливаем данные или пустой массив
+				setHistory(response.data || []);
 				console.log("Analysis history:", response.data);
 			} catch (err) {
 				console.error("Error fetching analysis history:", err);
 				let errorMessage = "Не удалось загрузить историю запросов.";
 				if (err.response) {
-					// Ошибка от сервера (например, 401, 403, 500)
 					if (err.response.status === 401) {
 						errorMessage =
 							"Пожалуйста, войдите в систему для просмотра истории.";
-						// Опционально: можно добавить редирект на /auth
 					} else {
 						errorMessage = `Ошибка сервера: ${
 							err.response.status
 						} ${err.response.data?.message || ""}`;
 					}
 				} else if (err.request) {
-					// Запрос был сделан, но ответа не было
 					errorMessage =
 						"Нет ответа от сервера. Проверьте соединение.";
 				}
 				setError(errorMessage);
-				setHistory(null); // Сбрасываем историю при ошибке
+				setHistory(null);
 			} finally {
 				setLoading(false);
 			}
 		};
 
 		fetchHistory();
-	}, []); // Пустой массив зависимостей - выполнить один раз при монтировании
+	}, []);
 
 	return (
 		<div className="container mx-auto px-4 py-8">
@@ -108,13 +105,13 @@ export default function Profile() {
 					</div>
 				)}
 
-				{!loading && !error && history && history.length === 0 && (
+				{!loading && !error && history?.length === 0 && (
 					<p className="text-gray-600">
 						У вас пока нет истории запросов.
 					</p>
 				)}
 
-				{!loading && !error && history && history.length > 0 && (
+				{!loading && !error && history?.length > 0 && (
 					<div className="space-y-4">
 						{history.map((item) => (
 							<HistoryItemCard key={item.id} item={item} />
@@ -126,7 +123,6 @@ export default function Profile() {
 	);
 }
 
-// --- Компонент для отображения одной записи истории ---
 function HistoryItemCard({ item }) {
 	const navigate = useNavigate();
 
@@ -146,6 +142,7 @@ function HistoryItemCard({ item }) {
 	return (
 		<div
 			onClick={handleClick}
+			name="history-entry"
 			className="bg-white shadow-md rounded-lg p-4 border border-gray-200 hover:shadow-lg transition-shadow duration-200"
 		>
 			<p className="text-sm text-gray-500 mb-2">
@@ -166,7 +163,6 @@ function HistoryItemCard({ item }) {
 	);
 }
 
-// --- Маленький компонент для отображения пары ключ-значение ---
 function Detail({ label, value }) {
 	return (
 		<div>

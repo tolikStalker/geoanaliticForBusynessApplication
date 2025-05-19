@@ -9,7 +9,7 @@ import re
 CITIES = [
     {"city": "zheleznovodsk", "capital": "stavropol"},
     {"city": "taganrog", "capital": "rostov"},
-    {"city": "rostov-on-don", "capital": "rostov"},
+    # {"city": "rostov-on-don", "capital": "rostov"},
 ]
 
 

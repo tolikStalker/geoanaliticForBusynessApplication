@@ -18,7 +18,7 @@ from shapely.wkb import loads as load_wkb
 from shapely.geometry import mapping
 from geoalchemy2.shape import to_shape
 import h3
-from datetime import datetime
+import datetime
 
 main_bp = Blueprint("main", __name__)
 
@@ -30,7 +30,6 @@ MIN_COMPETITORS = 1
 MAX_COMPETITORS = 20
 MIN_AREA_COUNT = 1
 MAX_AREA_COUNT = 100
-# --- ---
 
 
 # --- Функция для валидации параметров ---
@@ -136,53 +135,44 @@ def validate_analysis_params(args):
         return validated_data, None
 
 
+@main_bp.after_request
+def after_request_set_secure_headers(response):
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https://raw.githubusercontent.com https://cdnjs.cloudflare.com; "
+        "connect-src 'self' http://localhost:5000; "
+        "font-src 'self'; "
+    )
+    return response
+
+
 @main_bp.before_request
 def before_request_handler():
-    # Делаем сессию постоянной, чтобы PERMANENT_SESSION_LIFETIME работало
-    # и время жизни cookie обновлялось при каждой активности
     session.permanent = True
 
-    # Продлеваем время жизни сессии при каждой активности
-    # Flask автоматически обновит cookie, если session.permanent = True
-    # и данные сессии меняются (мы будем менять 'last_activity')
-
     if current_user.is_authenticated:
-        # Проверяем время последней активности
-        now = datetime.utcnow()
+        now = datetime.datetime.now(datetime.timezone.utc)
         last_activity_str = session.get("last_activity")
 
         if last_activity_str:
             try:
-                # Преобразуем строку обратно в datetime
-                # Используем isoformat() для надежного хранения/чтения
-                last_activity = datetime.fromisoformat(last_activity_str)
-
-                # Рассчитываем время неактивности
+                last_activity = datetime.datetime.fromisoformat(last_activity_str)
                 inactivity_duration = now - last_activity
-                max_inactivity = (
-                    current_app.permanent_session_lifetime
-                )  # Получаем из конфига
+                max_inactivity = current_app.permanent_session_lifetime
 
-                # Если неактивность превысила лимит
                 if inactivity_duration > max_inactivity:
                     logout_user()
-                    session.clear()  # Очищаем всю сессию на всякий случай
-                    # flash('Ваша сессия истекла из-за неактивности.', 'info') # Опционально: сообщение для пользователя (если есть обработка flash)
-                    print(
-                        f"User {current_user} logged out due to inactivity."
-                    )  # Логгирование
-                    # Можно сделать редирект на login, но для API это не нужно,
-                    # фронтенд сам обработает 401 при следующем запросе
-                    return  # Прерываем дальнейшую обработку запроса после logout
+                    session.clear()
+                    return
             except (ValueError, TypeError):
-                # Ошибка парсинга даты - лучше сбросить сессию
                 logout_user()
                 session.clear()
-                print("Error parsing last_activity, logging out user.")
                 return
 
-        # Обновляем время последней активности в сессии, если пользователь еще активен
-        # Преобразуем в строку ISO формата для хранения в сессии (JSON-сериализуемо)
         session["last_activity"] = now.isoformat()
 
 
@@ -231,7 +221,7 @@ def get_cities():
                 }
             )
         except Exception as e:
-            # app.logger.error(f"Ошибка при обработке города ID={city.id}: {e}")
+            current_app.logger.error(f"Ошибка при обработке города ID={city.id}: {e}")
             continue
 
     print(f"Ответ: {result}")  # Логирование данных перед отправкой
@@ -253,13 +243,18 @@ def get_categories():
                 }
             )
         except Exception as e:
-            # app.logger.error(f"Ошибка при обработке огранизации ID={category.id}: {e}")
+            current_app.logger.error(
+                f"Ошибка при обработке огранизации ID={category.id}: {e}"
+            )
             continue
 
     print(f"Ответ: {result}")  # Логирование данных перед отправкой
     return jsonify(result[1:])
 
+
 from flask import current_app
+
+
 @main_bp.route("/api/analysis", methods=["GET"])
 @login_required
 def get_analysis():
@@ -282,12 +277,14 @@ def get_analysis():
     rent_limit = validated_data["rent"]
     max_competitors_count = validated_data["competitors"]
     n_areas = validated_data["area_count"]
-    current_app.logger.info(f"User ID: {current_user.id}, City ID: {city_id}, Category ID: {category_id}")
-    city = City.query.get(city_id) 
+    current_app.logger.info(
+        f"User ID: {current_user.id}, City ID: {city_id}, Category ID: {category_id}"
+    )
+    city = db.session.get(City, city_id)
     if not city:
         return jsonify({"message": f"Город с ID {city_id} не найден."}), 404
 
-    category = Category.query.get(category_id) 
+    category = db.session.get(Category, category_id)
     if not category:
         return jsonify({"message": f"Категория с ID {category_id} не найдена."}), 404
 
@@ -324,12 +321,10 @@ def get_analysis():
         current_app.logger.error(
             f"Failed to save analysis history for user {current_user.id}: {e}"
         )
-        
-
 
     return jsonify(
         {
-            "user":current_user.id,
+            "user": current_user.id,
             "locations": locations,  # Список найденных локаций
             "circle_radius_km": radius_km,
             "rent_places": rent_places,
@@ -344,9 +339,14 @@ def get_analysis():
     )
 
 
+@login_manager.unauthorized_handler
+def unauthorized():
+    return jsonify({"error": "Unauthorized"}), 401
+
+
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 
 @main_bp.route("/register", methods=["POST"])
@@ -370,14 +370,24 @@ def register():
 @main_bp.route("/login", methods=["POST"])
 def login():
     if current_user.is_authenticated:
-        return jsonify({"error": "Already logged in"}), 400
+        return jsonify({"error": "already loggined in"}), 400
 
     data = request.json
     user = User.query.filter_by(username=data["username"]).first()
-    if user and check_password_hash(user.password, data["password"]):
+
+    if not user:
+        current_app.logger.warning(f"Login failed for user: {data['username']}")
+        return jsonify({"error": "user does not exist"}), 404
+
+    if check_password_hash(user.password, data["password"]):
         login_user(user)
+        session["last_activity"] = datetime.datetime.now(
+            datetime.timezone.utc
+        ).isoformat()
         return jsonify({"message": "Logged in!"})
-    return jsonify({"error": "Invalid credentials"}), 401
+
+    current_app.logger.warning(f"Login failed for user: {data['username']}")
+    return jsonify({"error": "incorrect password"}), 401
 
 
 @main_bp.route("/logout", methods=["POST"])
@@ -415,7 +425,9 @@ def get_competitors(city_id, category_id):
                 }
             )
         except Exception as e:
-            # app.logger.warning(f"Ошибка при обработке аренды ID={competitor.id}: {e}")
+            current_app.logger.warning(
+                f"Ошибка при обработке аренды ID={competitor.id}: {e}"
+            )
             continue
 
     return result
@@ -442,7 +454,9 @@ def get_rental_places(city_id, rent_limit):
                 }
             )
         except Exception as e:
-            # app.logger.warning(f"Ошибка при обработке аренды ID={rental.cian_id}: {e}")
+            current_app.logger.warning(
+                f"Ошибка при обработке аренды ID={rental.cian_id}: {e}"
+            )
             continue
 
     return result
@@ -494,11 +508,16 @@ def get_bound(city_id):
 
 # Расчет средней аренды
 def calculate_avg_rent(rent_places):
+    if not rent_places:
+        return 0
     return int(sum(rental["price"] for rental in rent_places) / len(rent_places))
 
 
 def calculate_avg_cost_for_square(rent_places):
-    valid_rentals = [r for r in rent_places if r["total_area"]]
+    valid_rentals = [r for r in rent_places if r.get("total_area")]
+    if not valid_rentals:
+        return 0
+
     return int(
         sum(rental["price"] / rental["total_area"] for rental in valid_rentals)
         / len(valid_rentals)
@@ -544,10 +563,12 @@ def find_top_zones(hexs, orgs, resolution, radius_m, max_comp, n):
         pop_sum0 = sum(pop_get(c, 0) for c in neighbors)
         comp_strength0 = sum(str_get(c, 0) for c in neighbors)
         comp_count0 = sum(count_get(c, 0) for c in neighbors)
+        avg_strength = comp_strength0 / (comp_count0 or 1)
         # фильтруем по max_comp сразу
         if comp_count0 > max_comp:
             continue
-        score0 = pop_sum0  # / (comp_strength0 + 1)
+        alpha = 0.01
+        score0 = pop_sum0 / (1 + alpha * avg_strength)
         # гео‑координаты центра
         lat, lon = h3.cell_to_latlng(cell)
         candidates[cell] = {

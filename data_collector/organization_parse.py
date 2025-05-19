@@ -43,10 +43,15 @@ def parse_snippet(snippet):
         coords = snippet.find_element(
             By.CLASS_NAME, "search-snippet-view__body"
         ).get_attribute("data-coordinates")
-        name = snippet.find_element(
-            By.CLASS_NAME, "search-business-snippet-view__title"
-        ).text
-
+        try:
+            name = snippet.find_element(
+                By.CLASS_NAME, "search-business-snippet-view__title"
+            ).text
+            
+        except NoSuchElementException:
+            print(f"Нет названия у элемента {address or "без адреса"}, пропускаем")
+            return None
+        
         try:
             rating = snippet.find_element(
                 By.CLASS_NAME, "business-rating-badge-view__rating-text"
@@ -124,18 +129,18 @@ service = Service(executable_path="./data_collector/msedgedriver.exe")
 driver = webdriver.Edge(service=service, options=options)
 
 driver.get("https://yandex.ru/maps/")
-
 for selectedCity in city:
+    selectedCity=city[1]
     print(f"Поиск города {selectedCity['name']}...")
-    if not search_and_click(selectedCity["name"]):
-        print("Ошибка поиска города.")
+    # if not search_and_click(selectedCity["name"]):
+    #     print("Ошибка поиска города.")
 
     for selectedCategory in category:
 
         time.sleep(1.5)  # пауза, чтобы поиск обновился
 
         print(f"Поиск организаций по категории: {selectedCategory['name']}...")
-        if not search_and_click(selectedCategory["name"]):
+        if not search_and_click(selectedCity["name"] + " " + selectedCategory["name"]):
             print("Ошибка поиска категории.")
 
         try:

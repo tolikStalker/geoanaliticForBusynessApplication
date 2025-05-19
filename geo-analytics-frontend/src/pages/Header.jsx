@@ -11,9 +11,9 @@ export default function Header() {
 		fetch("http://localhost:5000/logout", {
 			method: "POST",
 			credentials: "include",
-		}) // Отправляем запрос на выход
+		})
 			.then(() => {
-				setUser(null); // Очищаем данные пользователя
+				setUser(null);
 				navigate("/");
 				console.log("logout");
 			})
@@ -36,6 +36,7 @@ export default function Header() {
 						<div className="flex items-center space-x-4">
 							<Link
 								to="/profile"
+								name="profile"
 								className="font-semibold text-blue-600"
 							>
 								{user}

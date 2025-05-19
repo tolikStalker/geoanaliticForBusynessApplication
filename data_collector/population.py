@@ -15,7 +15,6 @@ from shapely.geometry import MultiPolygon
 def estimate_population(gdf):
     """
     Оценка населения:
-    - apartments: 3 человека/квартиру * 10 квартир/этаж
     - houses: 3 человека/дом
     """
     gdf = gdf.copy()
@@ -35,7 +34,7 @@ def estimate_population(gdf):
     ).fillna(1)
 
     choices = [
-        gdf["building:levels"].fillna(1) * gdf["area"] * 0.01,
+        gdf["building:levels"].fillna(1) * gdf["area"] * 0.008,
         3,
         3,  # gdf["building:levels"].fillna(1) * gdf["area"] * 0.01,
     ]

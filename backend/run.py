@@ -4,7 +4,7 @@ from sqlalchemy import text
 
 app = create_app()
 
-def test_db_connection():
+def check_db_connection():
     with app.app_context():
         try:
             db.session.execute(text("SELECT 1"))
@@ -14,5 +14,5 @@ def test_db_connection():
             exit(1)
 
 if __name__ == "__main__":
-    test_db_connection()
+    check_db_connection()
     app.run(debug=True)

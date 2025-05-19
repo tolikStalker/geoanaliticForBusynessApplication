@@ -9,5 +9,3 @@ CREATE Table if NOT exists analysis_requests (
 	area_count int not NULL,
 	created_at timestamp default now ()
 )
-
-select * FROM analysis_requests;

@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import L from "leaflet";
 import { scaleLog } from "d3-scale";
 import { interpolateRdYlGn } from "d3-scale-chromatic";
@@ -55,18 +55,21 @@ function getHexColor(pop, popMax) {
 export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 	const mapRef = useRef(null);
 	const mapInstance = useRef(null);
-	const hexStyle = (feature) => {
-		// население хранится в feature.properties.population
-		const pop = feature.properties.pop;
-		const maxPop = analysisResult?.hexs?.max;
-		return {
-			fillColor: getHexColor(pop, maxPop),
-			weight: 1,
-			opacity: 0.3,
-			color: "gray",
-			fillOpacity: 0.5,
-		};
-	};
+	const hexStyle = useCallback(
+		(feature) => {
+			// население хранится в feature.properties.population
+			const pop = feature.properties.pop;
+			const maxPop = analysisResult?.hexs?.max;
+			return {
+				fillColor: getHexColor(pop, maxPop),
+				weight: 1,
+				opacity: 0.3,
+				color: "gray",
+				fillOpacity: 0.5,
+			};
+		},
+		[analysisResult]
+	);
 	const layerGroups = useRef({
 		bounds: L.geoJSON(null, {
 			style: { color: "red", weight: 2, fillOpacity: 0.1 },
@@ -77,7 +80,7 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 			onEachFeature: (feature, layer) => {
 				const pop = feature?.properties?.pop ?? "N/A";
 				layer.bindPopup(
-					`<b>Население:</b> ${pop.toLocaleString()} чел.`
+					`<b>Население:</b> ${pop.toLocaleString()} чел.`,{className:"popup-hex"}
 				);
 			},
 		}),
@@ -138,9 +141,9 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 					}),
 					population: L.geoJSON(null, {
 						style: hexStyle,
-						onEachFeature: (f, l) => {
-							/* popup */
-						},
+						// onEachFeature: (f, l) => {
+						// 	/* popup */
+						// },
 					}),
 					rent: L.layerGroup(),
 					competitors: L.layerGroup(),
@@ -149,7 +152,7 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 				};
 			}
 		};
-	}, [center, zoom]);
+	}, [center, hexStyle, zoom]);
 
 	useEffect(() => {
 		if (!mapInstance.current || !analysisResult) {
@@ -174,10 +177,7 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 		layerGroups.current.competitors.clearLayers();
 		layerGroups.current.zones.clearLayers();
 
-		if (
-			layerGroups.current.legend &&
-			mapInstance.current.hasControl(layerGroups.current.legend)
-		) {
+		if (layerGroups.current.legend && layerGroups.current.legend._map) {
 			mapInstance.current.removeControl(layerGroups.current.legend);
 			layerGroups.current.legend = null;
 		}
@@ -208,7 +208,7 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 								place.id
 							}</a><br><b>Стоимость:</b> ${formatNumber(
 								place.price
-							)} ₽<br><b>Площадь:</b> ${place.total_area} м²`
+							)} ₽<br><b>Площадь:</b> ${place.total_area} м²`,{className:"popup-rent"}
 						);
 					layerGroups.current.rent.addLayer(marker);
 				} else {
@@ -233,7 +233,7 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 								place.name || "Конкурент"
 							}</b><br><b>Рейтинг:</b> ${
 								place.rate ?? "N/A"
-							}<br><b>Отзывов:</b> ${place.rate_count ?? "N/A"}`
+							}<br><b>Отзывов:</b> ${place.rate_count ?? "N/A"}`,{className:"popup-competitor"}
 						);
 					layerGroups.current.competitors.addLayer(marker);
 				} else {
@@ -258,10 +258,11 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 						color: "blue",
 						weight: 2,
 						fillOpacity: 0.1,
+						interactive: true,
 					}).bindPopup(
 						`<b>Расч. население:</b> ${
 							loc.pop_sum?.toLocaleString() ?? "N/A"
-						}`
+						}`,{className:"popup-zone"}
 					);
 					layerGroups.current.zones.addLayer(circle);
 				} else {
@@ -340,7 +341,7 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 				legend.addTo(mapInstance.current);
 			}
 		}
-	}, [analysisResult]);
+	}, [analysisResult, hexStyle, visibleLayers?.population]);
 
 	useEffect(() => {
 		if (!mapInstance.current || !visibleLayers) return;
@@ -365,16 +366,10 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 			}
 			// Handle Legend Control separately
 			else if (key === "legend" && layer instanceof L.Control) {
-				if (
-					visibleLayers.population &&
-					!mapInstance.current.hasControl(layer)
-				) {
+				if (visibleLayers.population && !layer._map) {
 					// Legend visibility depends on population layer
 					layer.addTo(mapInstance.current);
-				} else if (
-					!visibleLayers.population &&
-					mapInstance.current.hasControl(layer)
-				) {
+				} else if (!visibleLayers.population && layer._map) {
 					mapInstance.current.removeControl(layer);
 				}
 			}

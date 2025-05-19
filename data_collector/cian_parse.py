@@ -87,13 +87,18 @@ for ci in city:
 
             try:
                 for offer in cian_config_value[-1]["value"]["results"]["offers"]:
+                    total_area = offer.get("totalArea")
+                    if total_area is None:
+                        print(f"Пропущено: нет totalArea в {offer['cianId']}")
+                        continue
+    
                     data.append(
                         (
                             offer["cianId"],
                             ci["id"],
                             f"POINT({offer['geo']['coordinates']['lng']} {offer['geo']['coordinates']['lat']})",
                             offer["priceTotalPerMonthRur"],
-                            float(offer["totalArea"]),
+                            float(total_area),
                         )
                     )
             except KeyError as e:

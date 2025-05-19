@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Map from "../components/Map";
 import { useLocation } from "react-router-dom";
 import axios from "axios";
@@ -6,8 +6,9 @@ import {
 	BuildingStorefrontIcon,
 	CurrencyDollarIcon,
 	UserGroupIcon,
-	MapIcon, // For Zones/Locations
+	MapIcon,
 } from "@heroicons/react/24/outline";
+import { validateFilters, formatNumber } from "../utils/filters";
 
 const MIN_RADIUS = 0.5;
 const DEFAULT_RADIUS = 0.5;
@@ -20,72 +21,6 @@ const MIN_AREA_COUNT = 1;
 const MAX_AREA_COUNT = 20;
 const MIN_RENT = 10000;
 const MAX_RENT = 100000000;
-
-const formatNumber = (value) => {
-	if (value === "" || value === null || value === undefined) return "";
-	const num = parseFloat(value.toString().replace(/\D/g, "")); // Удаляем нечисловые символы
-	if (isNaN(num)) return "";
-	return num.toLocaleString("ru-RU", { minimumFractionDigits: 0 });
-};
-
-const validateFilters = (filters) => {
-	const errors = [];
-	if (!filters.city) {
-		errors.push("Необходимо выбрать город.");
-	}
-	if (!filters.categoryId) {
-		errors.push("Необходимо выбрать категорию бизнеса.");
-	}
-	const radiusNum = parseFloat(filters.radius);
-	if (isNaN(radiusNum) || radiusNum < MIN_RADIUS || radiusNum > MAX_RADIUS) {
-		errors.push(`Радиус должен быть от ${MIN_RADIUS} до ${MAX_RADIUS} км.`);
-	}
-
-	// Competitors
-	const competitorsNum = parseInt(filters.competitors);
-	if (
-		isNaN(competitorsNum) ||
-		competitorsNum < MIN_COMPETITORS ||
-		competitorsNum > MAX_COMPETITORS
-	) {
-		errors.push(
-			`Количество конкурентов должно быть от ${MIN_COMPETITORS} до ${MAX_COMPETITORS}.`
-		);
-	}
-
-	// Area Count
-	const areaCountNum = parseInt(filters.areaCount);
-	if (
-		isNaN(areaCountNum) ||
-		areaCountNum < MIN_AREA_COUNT ||
-		areaCountNum > MAX_AREA_COUNT
-	) {
-		errors.push(
-			`Количество зон должно быть от ${MIN_AREA_COUNT} до ${MAX_AREA_COUNT}.`
-		);
-	}
-
-	// Rent
-	const rentValue = filters.rent.trim();
-	if (rentValue !== "") {
-		const numericRent = parseFloat(rentValue.replace(/\s/g, "")); // Remove spaces for parsing
-		if (
-			isNaN(numericRent) ||
-			numericRent < MIN_RENT ||
-			numericRent > MAX_RENT
-		) {
-			errors.push(
-				`Стоимость аренды должна быть от ${formatNumber(
-					MIN_RENT
-				)} до ${formatNumber(MAX_RENT)}.`
-			);
-		}
-	}
-	if (errors.length > 0) {
-		return errors.join("\n");
-	}
-	return null;
-};
 
 export default function Analyze() {
 	const location = useLocation();
@@ -117,7 +52,7 @@ export default function Analyze() {
 	const autoAnalysisTriggered = useRef(false);
 	const selectedCity = cities.find((c) => c.id === filters.city);
 
-	const handleAnalyze = () => {
+	const handleAnalyze = useCallback(() => {
 		const error = validateFilters(filters);
 		if (error) {
 			setValidationError(error);
@@ -154,7 +89,7 @@ export default function Analyze() {
 			.finally(() => {
 				setLoading(false);
 			});
-	};
+	}, [filters, rentPlaceholder]);
 
 	// Загрузка списка городов и категорий при монтировании
 	useEffect(() => {
@@ -184,7 +119,7 @@ export default function Analyze() {
 				setCities(fetchedCities);
 				setCategories(fetchedCategories);
 
-				setFilters((currentFilters) => {
+				setFilters(() => {
 					const city = urlCityId
 						? Number(urlCityId)
 						: fetchedCities[0]?.id ?? null;
@@ -261,16 +196,14 @@ export default function Analyze() {
 			String(filters.categoryId) === params.get("category_id") &&
 			!autoAnalysisTriggered.current
 		) {
-			console.log(
-				"%c--> Triggering auto-analysis...",
-				"color: blue; font-weight: bold;"
-			);
+			// console.log(
+			// 	"%c--> Triggering auto-analysis...",
+			// 	"color: blue; font-weight: bold;"
+			// );
 			autoAnalysisTriggered.current = true; // Устанавливаем флаг ПЕРЕД вызовом
 			handleAnalyze();
 		}
-		// Зависимости: состояние загрузки справочников, фильтры.
-		// location.search не нужен, т.к. он проверяется внутри и используется для сброса флага в первом useEffect
-	}, [filters, loadingInitialData]);
+	}, [filters, handleAnalyze, loadingInitialData, location.search]);
 
 	const handleFilterChange = (field, value) => {
 		setFilters((prevFilters) => ({
@@ -284,10 +217,28 @@ export default function Analyze() {
 	};
 
 	const toggleLayer = (layerKey) => {
-		setVisibleLayers((prev) => ({
-			...prev,
-			[layerKey]: !prev[layerKey],
-		}));
+		switch (layerKey) {
+			case "rent":
+				setVisibleLayers((prev) => ({ ...prev, rent: !prev.rent }));
+				break;
+			case "competitors":
+				setVisibleLayers((prev) => ({
+					...prev,
+					competitors: !prev.competitors,
+				}));
+				break;
+			case "population":
+				setVisibleLayers((prev) => ({
+					...prev,
+					population: !prev.population,
+				}));
+				break;
+			case "zones":
+				setVisibleLayers((prev) => ({ ...prev, zones: !prev.zones }));
+				break;
+			default:
+				console.warn(`toggleLayer: Invalid layer key "${layerKey}"`);
+		}
 	};
 
 	return (
@@ -307,11 +258,12 @@ export default function Analyze() {
 						</label>
 						<select
 							value={filters.city || ""}
+							name="city"
 							onChange={(e) => {
 								const cityId = e.target.value
 									? Number(e.target.value)
 									: null;
-								handleFilterChange("city", cityId);
+								handleFilterChange("city", parseInt(cityId));
 							}}
 							className="input-field"
 						>
@@ -332,11 +284,12 @@ export default function Analyze() {
 						</label>
 						<select
 							value={filters.categoryId || ""}
+							name="category"
 							onChange={(e) => {
 								const categoryId = e.target.value
 									? Number(e.target.value)
 									: null;
-								handleFilterChange("categoryId", categoryId);
+								handleFilterChange("categoryId", parseInt(categoryId));
 							}}
 							className="input-field"
 						>
@@ -358,6 +311,7 @@ export default function Analyze() {
 						</label>
 						<input
 							type="range"
+							name="radius"
 							min={MIN_RADIUS}
 							max={MAX_RADIUS}
 							step="0.1"
@@ -376,6 +330,7 @@ export default function Analyze() {
 						</label>
 						<input
 							type="range"
+							name="competitors"
 							min={MIN_COMPETITORS}
 							max={MAX_COMPETITORS}
 							step="1"
@@ -396,6 +351,7 @@ export default function Analyze() {
 						</label>
 						<input
 							type="range"
+							name="area"
 							min={MIN_AREA_COUNT}
 							max={MAX_AREA_COUNT}
 							step="1"
@@ -413,16 +369,19 @@ export default function Analyze() {
 						</label>
 						<input
 							type="text"
+							name="rent"
 							value={formatNumber(filters.rent)}
 							onChange={(e) =>
 								handleFilterChange(
 									"rent",
-									e.target.value.replace(/\s/g, "")
+									e.target.value.replace(/\D/g, "")
 								)
 							}
 							className="input-field"
 							placeholder={formattedPlaceholder}
 							inputMode="numeric"
+							pattern="\d+"
+							maxLength="20"
 						/>
 					</div>
 

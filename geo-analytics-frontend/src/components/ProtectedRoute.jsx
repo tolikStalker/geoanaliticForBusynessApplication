@@ -7,7 +7,6 @@ export default function ProtectedRoute({ children }) {
 	const { user, authChecked, loading } = useUser(); // Добавили loading для лучшей индикации
 
 	useEffect(() => {
-		// Перенаправляем ТОЛЬКО если проверка завершена И пользователя нет
 		if (authChecked && !user) {
 			console.log(
 				"ProtectedRoute: Auth checked, user not found, navigating to /auth"
@@ -17,7 +16,6 @@ export default function ProtectedRoute({ children }) {
 	}, [user, navigate, authChecked]);
 
 	if (!authChecked || loading) {
-		// Используем authChecked и loading
 		return (
 			<div className="p-4 text-center text-gray-500">
 				Проверка аутентификации...

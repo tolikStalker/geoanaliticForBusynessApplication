@@ -10,5 +10,5 @@ class CianListing(db.Model):
     coordinates = db.Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
     price = db.Column(db.Integer, nullable=False)
     total_area = db.Column(db.Float)
-    last_updated = db.Column(db.TIMESTAMP, server_default=func.now())
+    last_updated = db.Column(db.DateTime, server_default=func.now())
     city = db.relationship("City", back_populates="cian_listings")

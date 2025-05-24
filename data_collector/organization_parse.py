@@ -15,21 +15,35 @@ from selenium.webdriver.edge.options import Options
 from selenium.webdriver.support.wait import WebDriverWait
 from psycopg2.extras import execute_values
 from selenium.webdriver.support import expected_conditions as EC
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from config import db_params
+import geopandas as gpd
+from functools import partial
+from shapely import wkt
 
 
 def parse_coordinates(coord_str):
     try:
         lat, lon = map(float, coord_str.split(","))
-        return f"POINT({lat} {lon})"
+        return f"POINT({lat} {lon})"  # важно: сначала X (lon), потом Y (lat)
     except Exception as exc:
         print(f"Ошибка координат: {coord_str} - {str(exc)}")
         return None
 
 
-def parse_snippet(snippet):
+def parse_snippet(snippet, polygon):
     try:
+        coords = snippet.find_element(
+            By.CLASS_NAME, "search-snippet-view__body"
+        ).get_attribute("data-coordinates")
+
+        coord = parse_coordinates(coords)
+        if not coord:
+            return None
+        point = wkt.loads(coord)
+        if not polygon.contains(point):
+            return
+
         try:
             address = snippet.find_element(
                 By.CLASS_NAME, "search-business-snippet-view__address"
@@ -37,21 +51,15 @@ def parse_snippet(snippet):
         except NoSuchElementException:
             address = None
 
-        # if selectedCity['name'] not in address:
-        #     return
-
-        coords = snippet.find_element(
-            By.CLASS_NAME, "search-snippet-view__body"
-        ).get_attribute("data-coordinates")
         try:
             name = snippet.find_element(
                 By.CLASS_NAME, "search-business-snippet-view__title"
             ).text
-            
+
         except NoSuchElementException:
             print(f"Нет названия у элемента {address or "без адреса"}, пропускаем")
             return None
-        
+
         try:
             rating = snippet.find_element(
                 By.CLASS_NAME, "business-rating-badge-view__rating-text"
@@ -72,7 +80,7 @@ def parse_snippet(snippet):
             int(re.search(r"\d+", rate_amount).group()) if rate_amount else None,
             # selectedCategory["id"],
             # category.lower() if category else None,
-            parse_coordinates(coords),
+            coord,
             address,
             selectedCity["id"],
         )
@@ -130,7 +138,6 @@ driver = webdriver.Edge(service=service, options=options)
 
 driver.get("https://yandex.ru/maps/")
 for selectedCity in city:
-    selectedCity=city[1]
     print(f"Поиск города {selectedCity['name']}...")
     # if not search_and_click(selectedCity["name"]):
     #     print("Ошибка поиска города.")
@@ -191,11 +198,32 @@ for selectedCity in city:
         if new_results:
             print("найдено", len(new_results), "организаций")
             data_batch = []
+            from sqlalchemy import create_engine
+            db_url = f"postgresql://{db_params['user']}:{db_params['password']}@{db_params['host']}:{db_params['port']}/{db_params['dbname']}"
+            engine = create_engine(db_url)
+            query = f"""
+                SELECT geom FROM city_boundaries WHERE city_id = %s
+            """
+            city_boundary_gdf = gpd.read_postgis(
+                query, engine, params=(selectedCity["id"],), geom_col="geom"
+            )
+            engine.dispose()
+
+            polygon = city_boundary_gdf.geometry.union_all()
+            parse_fn = partial(parse_snippet, polygon=polygon)
+
             with ThreadPoolExecutor(max_workers=10) as executor:
-                results = executor.map(parse_snippet, new_results)
+                results = executor.map(parse_fn, new_results)
                 data_batch = [r for r in results if r]
 
             if data_batch:
+                seen = set()
+                unique_data_batch = []
+                for row in data_batch:
+                    key = (row[0], row[3])  # name и coordinates
+                    if key not in seen:
+                        seen.add(key)
+                        unique_data_batch.append(row)
                 category_id = selectedCategory["id"]
 
                 conn = psycopg2.connect(**db_params)
@@ -203,12 +231,15 @@ for selectedCity in city:
 
                 values_sql = ",".join(
                     cursor.mogrify("(%s, %s, %s, %s, %s, %s)", row).decode()
-                    for row in data_batch
+                    for row in unique_data_batch
                 )
                 query = f"""
                     INSERT INTO organizations (name, rate, rate_count, coordinates, address, city_id)
                     VALUES {values_sql}
-                    ON CONFLICT DO NOTHING
+                    ON CONFLICT (name, coordinates) DO UPDATE
+                        SET rate = EXCLUDED.rate,
+                            rate_count = EXCLUDED.rate_count,
+                            address = EXCLUDED.address
                     RETURNING id;
                 """
                 cursor.execute(query)

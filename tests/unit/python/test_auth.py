@@ -65,14 +65,14 @@ def test_login_incorrect_password(client):
     
     response = client.post('/login', json={'username': 'user2', 'password': 'wrongpassword'})
     assert response.status_code == 401
-    assert response.json['error'] == 'Invalid credentials'
+    assert response.json['error'] == 'Incorrect password'
     with client.session_transaction() as sess:
 	    assert '_user_id' not in sess
 
 def test_login_nonexistent_user(client):
     response = client.post('/login', json={'username': 'nouser', 'password': 'password'})
-    assert response.status_code == 401
-    assert response.json['error'] == 'Invalid credentials'
+    assert response.status_code == 404
+    assert response.json['error'] == 'User does not exist'
 
 def test_login_when_already_logged_in(logged_in_client, test_user):
     response = logged_in_client.post('/login', json={'username': test_user.username, 'password': 'password'})
@@ -84,7 +84,7 @@ def test_logout(client,logged_in_client):
     assert response.status_code == 200
     assert response.json['message'] == 'Logged out'
     with client.session_transaction() as sess:
-        assert '_user_id' not in sess # Проверяем, что пользователь вышел
+        assert '_user_id' not in sess
 
 def test_logout_not_logged_in(client):
     response = client.post('/logout') 

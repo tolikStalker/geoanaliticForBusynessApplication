@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import Map from "../components/Map";
+import Map from "@/components/Map";
+import ZoneList from "@/components/ZoneList";
+import { validateFilters, formatNumber } from "@/utils/filters";
 import { useLocation } from "react-router-dom";
 import axios from "axios";
 import {
@@ -8,7 +10,6 @@ import {
 	UserGroupIcon,
 	MapIcon,
 } from "@heroicons/react/24/outline";
-import { validateFilters, formatNumber } from "../utils/filters";
 
 const MIN_RADIUS = 0.5;
 const DEFAULT_RADIUS = 0.5;
@@ -24,6 +25,7 @@ const MAX_RENT = 100000000;
 
 export default function Analyze() {
 	const location = useLocation();
+	const circleRefs = useRef({});
 
 	const rentPlaceholder = 10000;
 	const [validationError, setValidationError] = useState(null);
@@ -91,13 +93,11 @@ export default function Analyze() {
 			});
 	}, [filters, rentPlaceholder]);
 
-	// Загрузка списка городов и категорий при монтировании
 	useEffect(() => {
 		setLoadingInitialData(true); // Начинаем загрузку справочников
 		autoAnalysisTriggered.current = false; // Сбрасываем флаг при изменении URL
 		const params = new URLSearchParams(location.search);
 
-		// Читаем параметры из URL сразу
 		const urlCityId = params.get("city_id");
 		const urlCategoryId = params.get("category_id"); // Исправлено с category на category_id
 		const urlRadius = params.get("radius");
@@ -153,7 +153,6 @@ export default function Analyze() {
 					error
 				);
 				setValidationError("Не удалось загрузить начальные данные.");
-				// Возможно, стоит установить дефолтные фильтры здесь, если загрузка не удалась
 				setFilters({
 					city: null,
 					categoryId: null,
@@ -164,29 +163,14 @@ export default function Analyze() {
 				});
 			})
 			.finally(() => {
-				setLoadingInitialData(false); // Завершаем загрузку справочников
+				setLoadingInitialData(false); 
 			});
 	}, [location.search]);
 
 	useEffect(() => {
-		console.log(
-			"useEffect [auto-analysis check] triggered. LoadingInitial:",
-			loadingInitialData,
-			"Filters:",
-			filters,
-			"TriggeredRef:",
-			autoAnalysisTriggered.current
-		);
-
 		const params = new URLSearchParams(location.search);
 		const hasUrlParams = params.has("city_id") && params.has("category_id");
 
-		// Условия для автозапуска:
-		// 1. Загрузка справочников завершена (!loadingInitialData)
-		// 2. Город и категория установлены в фильтрах
-		// 3. В исходном URL БЫЛИ city_id и category_id
-		// 4. Текущие фильтры соответствуют параметрам из URL (на случай если установка фильтров еще не завершилась)
-		// 5. Автозапуск ЕЩЕ НЕ был выполнен для этого URL (флаг autoAnalysisTriggered.current)
 		if (
 			!loadingInitialData &&
 			filters.city &&
@@ -196,10 +180,6 @@ export default function Analyze() {
 			String(filters.categoryId) === params.get("category_id") &&
 			!autoAnalysisTriggered.current
 		) {
-			// console.log(
-			// 	"%c--> Triggering auto-analysis...",
-			// 	"color: blue; font-weight: bold;"
-			// );
 			autoAnalysisTriggered.current = true; // Устанавливаем флаг ПЕРЕД вызовом
 			handleAnalyze();
 		}
@@ -289,7 +269,10 @@ export default function Analyze() {
 								const categoryId = e.target.value
 									? Number(e.target.value)
 									: null;
-								handleFilterChange("categoryId", parseInt(categoryId));
+								handleFilterChange(
+									"categoryId",
+									parseInt(categoryId)
+								);
 							}}
 							className="input-field"
 						>
@@ -435,6 +418,10 @@ export default function Analyze() {
 								value={`${analysisResult?.avg_for_square} ₽/м²`}
 							/>
 						)}
+						<ZoneList
+							zones={analysisResult?.locations}
+							circleRefs={circleRefs}
+						/>
 					</div>
 				)}
 			</div>
@@ -444,10 +431,11 @@ export default function Analyze() {
 				<Map
 					center={
 						selectedCity ? selectedCity.center : [55.7558, 37.6173]
-					} // Центр города по умолчанию
+					}
 					zoom={12}
 					analysisResult={analysisResult}
 					visibleLayers={visibleLayers}
+					circleRefs={circleRefs}
 				/>
 				{/* Переключение слоев */}
 				{analysisResult && !loading && (

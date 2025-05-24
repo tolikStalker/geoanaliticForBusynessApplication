@@ -1,8 +1,8 @@
-import { render, screen, waitFor, fireEvent } from "@iting-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import axios from "axios";
 import Analyze from "@/pages/Analyze";
-import { describe, it, expect, vi, beforeEach } from "viit";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("axios");
 vi.mock("../components/Map", () => () => (

@@ -12,10 +12,10 @@ def app():
     app.config.update({
         "TESTING": True,
         "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
-        'WTF_CSRF_ENABLED': False, # Отключаем CSRF для упрощения тестов API
-        'LOGIN_DISABLED': False, # Убедитесь, что login_required работает
+        'WTF_CSRF_ENABLED': False, 
+        'LOGIN_DISABLED': False, 
         'SECRET_KEY': 'test_secret_key',
-        'PERMANENT_SESSION_LIFETIME': timedelta(minutes=5) # Для теста таймаута     
+        'PERMANENT_SESSION_LIFETIME': timedelta(minutes=5)     
         })
     with app.app_context():
         db.create_all()
@@ -30,13 +30,13 @@ def client(app):
     return app.test_client()
 
 
-@pytest.fixture(scope='function') # scope='function' для изоляции данных между тестами
+@pytest.fixture(scope='function') 
 def db_session(app):
     """Предоставляет сессию базы данных для тестов с автоматическим откатом."""
     with app.app_context():
         connection = db.engine.connect()
         transaction = connection.begin()
-        db.session.begin_nested() # Для SQLAlchemy ORM
+        db.session.begin_nested() 
 
         yield db.session
 

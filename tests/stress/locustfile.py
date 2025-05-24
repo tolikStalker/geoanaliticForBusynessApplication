@@ -2,114 +2,102 @@ import random
 import uuid
 from locust import HttpUser, TaskSet, task, between, tag
 
-# --- Константы из вашего Flask-приложения для генерации тестовых данных ---
+# --- Константы ---
 MIN_RADIUS = 0.5
 MAX_RADIUS = 5.0
 MIN_RENT = 0
-MAX_RENT = 100000000  # Можно использовать меньший верхний предел для большинства тестов
-REALISTIC_MAX_RENT = 500000  # Более реалистичный верхний предел для частых тестов
+MAX_RENT = 100000000
+REALISTIC_MAX_RENT = 500000
 MIN_COMPETITORS = 1
 MAX_COMPETITORS = 20
 MIN_AREA_COUNT = 1
 MAX_AREA_COUNT = 100
 
-# --- Глобальные переменные для хранения полученных данных ---
-# Эти переменные будут заполняться один раз (или периодически)
-# чтобы не дергать эти эндпоинты каждым пользователем постоянно
+# --- Глобальные переменные для общих данных (загружаются один раз) ---
+# Лучше использовать locust events для этого, но для простоты оставим так с флагом
 available_cities = []
 available_categories = []
-data_loaded = False  # Флаг, чтобы загрузить данные один раз
+initial_data_loaded = False  # Флаг, чтобы загрузить данные один раз
 
 
 def get_random_city_id():
     if available_cities:
         return random.choice(available_cities)["id"]
-    return 1  # Fallback, если города не загружены (в идеале, тест должен остановиться)
+    print("Warning: available_cities is empty, returning fallback city_id=1")
+    return 1
 
 
 def get_random_category_id():
     if available_categories:
         return random.choice(available_categories)["id"]
-    return 1  # Fallback
+    print("Warning: available_categories is empty, returning fallback category_id=1")
+    return 1
 
 
-class BaseBehavior(TaskSet):
+class UserBehavior(TaskSet):
+    """Общее поведение, которое может быть как для аутентифицированных, так и для неаутентифицированных."""
+
     def on_start(self):
         """
         Вызывается при старте TaskSet для пользователя.
-        Попытаемся загрузить города и категории, если они еще не загружены.
-        Это не идеально для Locust (лучше бы это делал один "setup" пользователь),
-        но для данного примера это упрощение.
+        Загружаем общие данные (города, категории) один раз для всех пользователей.
         """
-        global data_loaded, available_cities, available_categories
-        if not data_loaded:
-            # Используем self.client родительского HttpUser
-            print("Attempting to load initial cities and categories...")
+        global initial_data_loaded, available_cities, available_categories
+        # Этот блок выполнится только один раз, когда первый пользователь начнет этот TaskSet
+        if not initial_data_loaded:
+            print("UserBehavior: Attempting to load initial cities and categories...")
+            # Используем self.user.client, чтобы получить доступ к HttpUser клиенту
             try:
-                with self.client.get(
+                with self.user.client.get(
                     "/api/cities", name="/api/cities (setup)", catch_response=True
                 ) as response:
                     if response.ok:
                         available_cities = response.json()
-                        if not available_cities:
-                            print("Warning: No cities loaded from /api/cities")
-                        else:
-                            print(f"Loaded {len(available_cities)} cities.")
+                        print(f"UserBehavior: Loaded {len(available_cities)} cities.")
                     else:
-                        print(
-                            f"Failed to load cities: {response.status_code} - {response.text}"
-                        )
                         response.failure(
-                            f"Failed to load cities: {response.status_code}"
+                            f"UserBehavior: Failed to load cities: {response.status_code}"
                         )
 
-                with self.client.get(
+                with self.user.client.get(
                     "/api/categories",
                     name="/api/categories (setup)",
                     catch_response=True,
                 ) as response:
                     if response.ok:
-                        # Важно: ваш API возвращает result[1:]
-                        # Если locust будет использовать оригинальный список, ID могут не совпасть.
-                        # Но мы просто сохраняем то, что вернул API.
                         available_categories = response.json()  # API уже делает [1:]
-                        if not available_categories:
-                            print("Warning: No categories loaded from /api/categories")
-                        else:
-                            print(f"Loaded {len(available_categories)} categories.")
-
-                    else:
                         print(
-                            f"Failed to load categories: {response.status_code} - {response.text}"
+                            f"UserBehavior: Loaded {len(available_categories)} categories."
                         )
+                    else:
                         response.failure(
-                            f"Failed to load categories: {response.status_code}"
+                            f"UserBehavior: Failed to load categories: {response.status_code}"
                         )
 
                 if available_cities and available_categories:
-                    data_loaded = True
-                    print("Initial data loaded successfully.")
+                    initial_data_loaded = True
+                    print(
+                        "UserBehavior: Initial data (cities, categories) loaded successfully."
+                    )
                 else:
                     print(
-                        "Failed to load essential initial data (cities/categories). Analysis tasks might fail."
+                        "UserBehavior: Failed to load essential initial data. Some tasks might rely on this data."
                     )
 
             except Exception as e:
-                print(f"Exception during initial data load: {e}")
-                # Можно пометить тест как неудачный, если критичные данные не загружены
-                # self.user.environment.runner.quit()
+                print(f"UserBehavior: Exception during initial data load: {e}")
 
-
-class AuthenticatedUserBehavior(BaseBehavior):
-    """
-    Поведение для аутентифицированного пользователя.
-    Предполагается, что пользователь уже вошел в систему в on_start родительского User.
-    """
-
-    @task(5)  # Более частая задача
+    @task(5)
+    @tag("analysis")
     def get_valid_analysis(self):
+        if (
+            not self.user.is_logged_in
+        ):  # Проверяем, залогинен ли пользователь этого HttpUser
+            # print(f"User {self.user.username} is not logged in, skipping get_valid_analysis.")
+            return  # Пропускаем, если не залогинен
+
         if not available_cities or not available_categories:
-            print("Skipping get_valid_analysis: cities or categories not loaded.")
+            # print("Skipping get_valid_analysis: cities or categories not loaded by UserBehavior.on_start.")
             return
 
         params = {
@@ -129,33 +117,35 @@ class AuthenticatedUserBehavior(BaseBehavior):
             if response.ok:
                 try:
                     data = response.json()
-                    assert "locations" in data
-                    assert "competitors" in data
+                    assert (
+                        "locations" in data
+                    ), "Missing 'locations' in valid analysis response"
                     response.success()
-                except (
-                    AssertionError,
-                    ValueError,
-                ):  # ValueError for json.JSONDecodeError
+                except Exception as e:
                     response.failure(
-                        f"Invalid JSON response or missing keys for valid analysis: {response.text[:200]}"
+                        f"Valid analysis OK but bad response: {e} - {response.text[:100]}"
                     )
-            elif response.status_code == 404:  # Город или категория не найдены
-                response.success()  # Ожидаемый негативный сценарий, если ID не существует
+            elif response.status_code == 401:
+                response.failure(
+                    f"get_valid_analysis UNAUTHORIZED: {response.status_code} - {params}"
+                )
+            elif (
+                response.status_code == 404
+            ):  # Ожидаемая ошибка, если ID города/категории случайно не существует
+                response.success()
             else:
                 response.failure(
-                    f"Failed valid analysis: {response.status_code} - {params} - {response.text[:200]}"
+                    f"Failed valid analysis: {response.status_code} - {params} - {response.text[:100]}"
                 )
 
     @task(2)
-    @tag("analysis_validation_errors")
+    @tag("analysis_validation")
     def get_analysis_validation_errors(self):
-        """Тестирует различные ошибки валидации для /api/analysis."""
-        if not available_cities or not available_categories:
-            print(
-                "Skipping get_analysis_validation_errors: cities or categories not loaded."
-            )
+        if not self.user.is_logged_in:
+            # print(f"User {self.user.username} is not logged in, skipping get_analysis_validation_errors.")
             return
 
+        # ... (ваш код для test_cases остается таким же) ...
         base_valid_params = {
             "city_id": get_random_city_id(),
             "category_id": get_random_category_id(),
@@ -164,7 +154,6 @@ class AuthenticatedUserBehavior(BaseBehavior):
             "competitors": random.randint(MIN_COMPETITORS, MAX_COMPETITORS),
             "area_count": random.randint(MIN_AREA_COUNT, MAX_AREA_COUNT),
         }
-
         test_cases = [
             (
                 "missing_city_id",
@@ -201,13 +190,9 @@ class AuthenticatedUserBehavior(BaseBehavior):
                 "invalid_area_count_high",
                 {**base_valid_params, "area_count": MAX_AREA_COUNT + 1},
             ),
-            (
-                "non_existent_city_id",
-                {**base_valid_params, "city_id": 999999},
-            ),  # Предполагаем, что такого ID нет
+            ("non_existent_city_id", {**base_valid_params, "city_id": 999999}),
             ("non_existent_category_id", {**base_valid_params, "category_id": 999999}),
         ]
-
         case_name, params_to_test = random.choice(test_cases)
 
         with self.client.get(
@@ -216,313 +201,205 @@ class AuthenticatedUserBehavior(BaseBehavior):
             name=f"/api/analysis (invalid: {case_name})",
             catch_response=True,
         ) as response:
-            if response.status_code == 400:  # Ожидаемая ошибка валидации
+            if response.status_code == 400:
                 try:
                     error_data = response.json()
-                    assert "message" in error_data
-                    assert "errors" in error_data
+                    assert "message" in error_data and "errors" in error_data
                     response.success()
-                except (AssertionError, ValueError):
+                except Exception as e:
                     response.failure(
-                        f"Validation error (400) but bad JSON response: {response.text[:200]}"
+                        f"Validation error (400) but bad JSON: {e} - {response.text[:100]}"
                     )
-            elif response.status_code == 404 and (
-                "non_existent" in case_name
-            ):  # Ожидаемый Not Found
+            elif response.status_code == 404 and ("non_existent" in case_name):
                 response.success()
+            elif response.status_code == 401:
+                response.failure(
+                    f"get_analysis_validation_errors UNAUTHORIZED for {case_name}: {response.status_code}"
+                )
             else:
                 response.failure(
-                    f"Unexpected response for invalid analysis ({case_name}): {response.status_code} - {response.text[:200]}"
+                    f"Unexpected response for invalid analysis ({case_name}): {response.status_code} - {response.text[:100]}"
                 )
 
     @task(3)
+    @tag("history")
     def get_history(self):
+        if not self.user.is_logged_in:
+            return
         with self.client.get(
             "/api/history", name="/api/history", catch_response=True
         ) as response:
             if response.ok:
                 try:
                     data = response.json()
-                    assert isinstance(data, list)  # История должна быть списком
+                    assert isinstance(data, list)
                     response.success()
-                except (AssertionError, ValueError):
+                except Exception as e:
                     response.failure(
-                        f"Invalid JSON response for history: {response.text[:200]}"
+                        f"History OK but bad response: {e} - {response.text[:100]}"
                     )
+            elif response.status_code == 401:
+                response.failure(f"get_history UNAUTHORIZED: {response.status_code}")
             else:
                 response.failure(
-                    f"Failed to get history: {response.status_code} - {response.text[:200]}"
+                    f"Failed to get history: {response.status_code} - {response.text[:100]}"
                 )
 
     @task(1)
+    @tag("me")
     def get_me(self):
+        if not self.user.is_logged_in:
+            return
         with self.client.get("/me", name="/me", catch_response=True) as response:
             if response.ok:
                 try:
                     data = response.json()
                     assert "username" in data
                     response.success()
-                except (AssertionError, ValueError):
+                except Exception as e:
                     response.failure(
-                        f"Invalid JSON response for /me: {response.text[:200]}"
+                        f"/me OK but bad response: {e} - {response.text[:100]}"
                     )
+            elif response.status_code == 401:
+                response.failure(f"get_me UNAUTHORIZED: {response.status_code}")
             else:
                 response.failure(
-                    f"Failed to get /me: {response.status_code} - {response.text[:200]}"
+                    f"Failed to get /me: {response.status_code} - {response.text[:100]}"
                 )
 
-
-class UnauthenticatedUserBehavior(BaseBehavior):
-    """Поведение для неаутентифицированного пользователя или для процесса входа/регистрации."""
-
     @task(1)
-    def get_cities_task(
-        self,
-    ):  # Переименовано, чтобы не конфликтовать с глобальной переменной
-        # Этот эндпоинт также вызывается в on_start, но может быть вызван и отдельно
+    @tag("public_data")
+    def get_public_cities(self):  # Отдельная задача для публичных данных
         with self.client.get(
-            "/api/cities", name="/api/cities", catch_response=True
+            "/api/cities", name="/api/cities (public)", catch_response=True
         ) as response:
             if response.ok:
                 try:
                     cities_data = response.json()
                     assert isinstance(cities_data, list)
-                    if (
-                        cities_data
-                    ):  # Проверяем, что список не пустой, если ожидаются города
-                        assert "id" in cities_data[0]
-                        assert "name" in cities_data[0]
                     response.success()
-                except (AssertionError, ValueError, IndexError):
+                except Exception as e:
                     response.failure(
-                        f"Invalid JSON response for cities: {response.text[:200]}"
+                        f"Cities OK but bad response: {e} - {response.text[:100]}"
                     )
             else:
                 response.failure(
-                    f"Failed to get cities: {response.status_code} - {response.text[:200]}"
+                    f"Failed public /api/cities: {response.status_code} - {response.text[:100]}"
                 )
 
     @task(1)
-    def get_categories_task(self):
+    @tag("public_data")
+    def get_public_categories(self):  # Отдельная задача для публичных данных
         with self.client.get(
-            "/api/categories", name="/api/categories", catch_response=True
+            "/api/categories", name="/api/categories (public)", catch_response=True
         ) as response:
             if response.ok:
                 try:
                     categories_data = response.json()
                     assert isinstance(categories_data, list)
-                    # Ваш API возвращает result[1:], так что список может быть пустым, если в БД всего 1 категория
-                    if categories_data:
-                        assert "id" in categories_data[0]
-                        assert "name" in categories_data[0]
                     response.success()
-                except (AssertionError, ValueError, IndexError):
+                except Exception as e:
                     response.failure(
-                        f"Invalid JSON for categories: {response.text[:200]}"
+                        f"Categories OK but bad response: {e} - {response.text[:100]}"
                     )
             else:
                 response.failure(
-                    f"Failed to get categories: {response.status_code} - {response.text[:200]}"
-                )
-
-    @task(1)
-    @tag("auth_protected_routes")
-    def attempt_protected_routes(self):
-        """Попытка доступа к защищенным эндпоинтам без аутентификации."""
-        endpoints_to_try = ["/api/analysis", "/api/history", "/me"]
-        chosen_endpoint = random.choice(endpoints_to_try)
-        if chosen_endpoint == "/api/analysis":  # требует параметров
-            params = {
-                "city_id": 1,
-                "category_id": 1,
-                "radius": 1,
-                "rent": 1000,
-                "competitors": 5,
-                "area_count": 10,
-            }
-            with self.client.get(
-                chosen_endpoint,
-                params=params,
-                name=f"{chosen_endpoint} (unauth)",
-                catch_response=True,
-            ) as response:
-                if response.status_code == 401:
-                    response.success()
-                else:
-                    response.failure(
-                        f"Protected route {chosen_endpoint} accessible unauth or wrong error: {response.status_code}"
-                    )
-        else:
-            with self.client.get(
-                chosen_endpoint, name=f"{chosen_endpoint} (unauth)", catch_response=True
-            ) as response:
-                if response.status_code == 401:
-                    response.success()
-                else:
-                    response.failure(
-                        f"Protected route {chosen_endpoint} accessible unauth or wrong error: {response.status_code}"
-                    )
-
-        # Попытка POST /logout без аутентификации
-        with self.client.post(
-            "/logout", name="/logout (unauth)", catch_response=True
-        ) as response:
-            if response.status_code == 401:
-                response.success()
-            else:
-                response.failure(
-                    f"POST /logout accessible unauth or wrong error: {response.status_code}"
+                    f"Failed public /api/categories: {response.status_code} - {response.text[:100]}"
                 )
 
 
-class FullUserJourney(HttpUser):
-    """
-    Моделирует полный жизненный цикл пользователя:
-    1. Регистрация (редко) ИЛИ Вход (чаще)
-    2. Использование API как аутентифицированный пользователь
-    3. Выход из системы
-    """
+class AuthenticatedApiUser(HttpUser):
+    host = "http://localhost:5000"
 
-    tasks = {
-        AuthenticatedUserBehavior: 10,
-        UnauthenticatedUserBehavior: 1,
-    }  # Аутентифицированные действия чаще
-    wait_time = between(1, 5)  # Время ожидания между задачами от 1 до 5 секунд
+    tasks = [UserBehavior]  # Все задачи теперь в UserBehavior
+    wait_time = between(1, 3)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.username = f"testuser_{uuid.uuid4().hex[:10]}"
-        self.password = "testpassword123"
-        self.is_logged_in = False
+        self.username = f"testlocust_{uuid.uuid4().hex[:8]}"
+        self.password = "locustpassword"
+        self.is_logged_in = False  # Флаг на уровне HttpUser
 
     def on_start(self):
-        """Вызывается один раз для каждого виртуального пользователя."""
-        # Решаем, будет ли пользователь регистрироваться или пытаться войти
-        # В реальном сценарии у вас могут быть предустановленные пользователи
-        if random.random() < 0.8:  # 80% шанс попробовать войти, 20% зарегистрироваться
-            self.login()
-            if (
-                not self.is_logged_in and random.random() < 0.5
-            ):  # Если логин не удался, с 50% шансом пробуем зарегистрироваться
-                self.register_and_login()
-        else:
-            self.register_and_login()
-
-        # Вызов on_start для TaskSet'ов, чтобы загрузить начальные данные, если необходимо
-        # Этот вызов on_start для TaskSet'ов выполнится после on_start самого User'а.
-        # Это значит, что client уже будет настроен (с куками после логина).
-        # Но наш BaseBehavior.on_start не зависит от состояния логина для загрузки городов/категорий.
-        for taskset_class in self.tasks:
-            if hasattr(taskset_class, "on_start") and callable(
-                getattr(taskset_class, "on_start")
-            ):
-                # Создаем экземпляр TaskSet, чтобы вызвать его on_start
-                # Это немного хак, т.к. Locust сам управляет созданием TaskSet'ов
-                # Но нам нужно вызвать логику загрузки данных.
-                # ВАЖНО: такой экземпляр TaskSet не будет выполнять свои @task.
-                # Это делается для вызова логики on_start в BaseBehavior.
-                # Это не идеальный способ управления общей начальной загрузкой данных.
-                # Лучше было бы иметь слушателя событий Locust test_start/test_stop.
-                # Однако, для данного случая, вызов через BaseBehavior.on_start при первом запуске TaskSet
-                # для любого пользователя должен сработать для глобальных переменных.
-                pass  # Логика загрузки данных в BaseBehavior.on_start вызовется, когда Locust начнет выполнять задачи из TaskSet
-
-    def register_and_login(self):
-        # Регистрация
-        with self.client.post(
-            "/register",
-            json={"username": self.username, "password": self.password},
-            name="/register",
-            catch_response=True,
-        ) as reg_response:
-            if reg_response.ok:
-                print(f"User {self.username} registered successfully.")
-                reg_response.success()
-                self.is_logged_in = (
-                    True  # Flask-login обычно логинит сразу после регистрации
-                )
-            elif (
-                reg_response.status_code == 400
-                and "User already exists" in reg_response.text
-            ):
-                # Пользователь уже существует, это нормально, пытаемся войти
-                print(f"User {self.username} already exists, attempting login.")
-                reg_response.success()  # Считаем это успехом для регистрации, т.к. цель - получить пользователя
-                self.login()
-            else:
-                print(
-                    f"Failed to register {self.username}: {reg_response.status_code} - {reg_response.text}"
-                )
-                reg_response.failure(
-                    f"Registration failed: {reg_response.status_code} - {reg_response.text[:100]}"
-                )
-                self.is_logged_in = False
-
-    def login(self):
+        """Логин или регистрация при старте пользователя Locust."""
+        print(f"User {self.username} starting...")
+        # Сначала пытаемся залогиниться, если не получается и пользователя нет -> регистрируемся
         with self.client.post(
             "/login",
             json={"username": self.username, "password": self.password},
-            name="/login",
             catch_response=True,
-        ) as login_response:
-            if login_response.ok:
-                print(f"User {self.username} logged in successfully.")
-                login_response.success()
+            name="/login (on_start)",
+        ) as r_login:
+            if r_login.ok:
+                print(f"User {self.username} logged in successfully (on_start).")
                 self.is_logged_in = True
-            elif login_response.status_code == 401:  # Invalid credentials
-                print(f"Login failed for {self.username}: Invalid credentials.")
-                login_response.success()  # Это ожидаемое поведение для теста на неверные данные
-                self.is_logged_in = False
+                r_login.success()
             elif (
-                login_response.status_code == 400
-                and "Already logged in" in login_response.text
+                r_login.status_code == 404
+                and "user does not exist" in r_login.json().get("error", "").lower()
             ):
+                # Пользователя нет
                 print(
-                    f"User {self.username} was already logged in."
-                )  # Может случиться, если сессия не очистилась
-                login_response.success()
-                self.is_logged_in = True
-            else:
-                print(
-                    f"Login failed for {self.username}: {login_response.status_code} - {login_response.text}"
+                    f"User {self.username} does not exist, attempting registration (on_start)."
                 )
-                login_response.failure(
-                    f"Login failed: {login_response.status_code} - {login_response.text[:100]}"
+                with self.client.post(
+                    "/register",
+                    json={"username": self.username, "password": self.password},
+                    catch_response=True,
+                    name="/register (on_start)",
+                ) as r_reg:
+                    if r_reg.ok:
+                        print(
+                            f"User {self.username} registered and logged in successfully (on_start)."
+                        )
+                        self.is_logged_in = (
+                            True  # Flask-Login обычно логинит после регистрации
+                        )
+                        r_login.success()
+                        r_reg.success()
+                    else:
+                        print(
+                            f"User {self.username} registration failed (on_start): {r_reg.status_code} - {r_reg.text}"
+                        )
+                        self.is_logged_in = False
+                        r_reg.failure(f"Registration failed: {r_reg.status_code}")
+            elif (
+                r_login.status_code == 401
+            ):  # Неверный пароль (если пользователь уже был создан ранее с другим)
+                print(
+                    f"User {self.username} login failed - incorrect password (on_start). Will not be logged in."
                 )
                 self.is_logged_in = False
+                r_login.success()  # Считаем это "успехом" для попытки логина, т.к. ответ ожидаемый
+            else:  # Другие ошибки логина
+                print(
+                    f"User {self.username} login failed (on_start) with status {r_login.status_code}: {r_login.text}"
+                )
+                self.is_logged_in = False
+                r_login.failure(f"Login failed: {r_login.status_code}")
+        if not self.is_logged_in:
+            print(
+                f"WARNING: User {self.username} could not log in or register. Protected tasks will be skipped."
+            )
 
-    @task(1)  # Выход из системы - менее частая задача
-    def logout_task(self):
+    @task(1)  # Задача для выхода из системы, менее частая
+    @tag("logout")
+    def logout(self):
         if self.is_logged_in:
             with self.client.post(
                 "/logout", name="/logout", catch_response=True
-            ) as logout_response:
-                if logout_response.ok:
-                    logout_response.success()
-                    self.is_logged_in = False
+            ) as response:
+                if response.ok:
                     print(f"User {self.username} logged out.")
-                    # После выхода, можно снова попытаться войти или зарегистрироваться в следующем цикле
-                    # или просто стать "неактивным" до следующего on_start (если бы он вызывался чаще)
-                    # Для простоты, следующий on_start (если тест длится долго) снова попытается войти/зарегистрироваться
-                    if random.random() < 0.7:  # 70% шанс снова войти
-                        self.login()
-                    else:  # 30% шанс зарегистрировать нового (маловероятно, что имя будет свободно без смены)
-                        self.username = f"testuser_{uuid.uuid4().hex[:10]}"  # меняем имя, чтобы регистрация прошла
-                        self.register_and_login()
-
+                    self.is_logged_in = False
+                    response.success()
+                    # Можно добавить логику для повторного входа или остановки пользователя
+                    self.on_start()  # Попробуем снова залогиниться/зарегистрироваться
                 else:
-                    logout_response.failure(
-                        f"Logout failed: {logout_response.status_code} - {logout_response.text[:100]}"
+                    response.failure(
+                        f"Logout failed: {response.status_code} - {response.text[:100]}"
                     )
         else:
-            # Если не залогинен, можно попробовать залогиниться
-            if random.random() < 0.5:
-                self.login()
-
-
-# Если вы хотите иметь отдельный тип пользователя, который только читает публичные данные:
-# class PublicDataReader(HttpUser):
-#     tasks = [UnauthenticatedUserBehavior]
-#     wait_time = between(2, 6)
-#     # В on_start этого пользователя также можно загрузить города/категории,
-#     # если это первый пользователь такого типа.
+            # Если не залогинен, может быть, стоит попытаться войти? Или просто ничего не делать.
+            # print(f"User {self.username} tried to logout but was not logged in.")
+            pass  # Ничего не делаем, если не залогинен

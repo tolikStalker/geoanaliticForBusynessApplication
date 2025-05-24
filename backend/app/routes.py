@@ -265,7 +265,7 @@ def get_analysis():
             jsonify(
                 {
                     "message": "Ошибка валидации параметров запроса.",
-                    "errors": validation_errors,  # Словарь {field: message}
+                    "errors": validation_errors,
                 }
             ),
             400,
@@ -303,6 +303,9 @@ def get_analysis():
         n_areas,
     )
     print(current_user.id)
+    
+    for i, location in enumerate(locations):
+        location["id"] = i
 
     try:
         history_entry = AnalysisRequest(
@@ -370,14 +373,14 @@ def register():
 @main_bp.route("/login", methods=["POST"])
 def login():
     if current_user.is_authenticated:
-        return jsonify({"error": "already loggined in"}), 400
+        return jsonify({"error": "Already logged in"}), 400
 
     data = request.json
     user = User.query.filter_by(username=data["username"]).first()
 
     if not user:
         current_app.logger.warning(f"Login failed for user: {data['username']}")
-        return jsonify({"error": "user does not exist"}), 404
+        return jsonify({"error": "User does not exist"}), 404
 
     if check_password_hash(user.password, data["password"]):
         login_user(user)
@@ -387,7 +390,7 @@ def login():
         return jsonify({"message": "Logged in!"})
 
     current_app.logger.warning(f"Login failed for user: {data['username']}")
-    return jsonify({"error": "incorrect password"}), 401
+    return jsonify({"error": "Incorrect password"}), 401
 
 
 @main_bp.route("/logout", methods=["POST"])

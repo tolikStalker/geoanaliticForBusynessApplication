@@ -148,9 +148,23 @@ def create_hexagons(geoJson, residential_buildings_gdf, cityid, resolution=10):
 
 # Получение данных
 def get_osm_data(area):
+    polygon = area.geometry[0]
+
     # Скачиваем здания
-    tags = {"building": ["apartments", "house", "detached", "dormitory", "yes"]}
-    gdf = ox.features_from_polygon(area.geometry[0], tags=tags)
+    tags = {
+        "building": [
+            "apartments",
+            "house",
+            "detached",
+            "residential",
+            "dormitory",
+            "terrace",
+            "semidetached_house",
+            "bungalow",
+            "yes"
+        ]
+    }
+    gdf = ox.features_from_polygon(polygon, tags=tags)
 
     # Убираем здания с признаками non-residential (если есть такие теги)
     unwanted_tags = ["amenity", "tourism", "resort", "man_made", "shop", "leisure"]
@@ -164,8 +178,40 @@ def get_osm_data(area):
         & (gdf["building:levels"].isna())
         & (gdf["addr:housenumber"].isna())
     )
+    gdf_filtered = gdf[condition].copy()
 
-    return gdf[condition]
+
+    exclude_areas_tags = {
+        "landuse": [
+            "industrial",
+            "commercial",
+            "retail",
+            "military",
+            "cemetery",
+            "garages",
+            "park"
+        ],
+        "amenity": ["school", "university", "college", "kindergarten", "hospital","parking"],
+        "man_made": ["works", "plant"],
+        "military": True,
+    }
+    exclude_areas = ox.features_from_polygon(polygon, exclude_areas_tags)
+    
+    # 3. Приводим к одинаковой проекции
+    gdf_filtered = gdf_filtered.to_crs("EPSG:3857")
+    exclude_areas = exclude_areas.to_crs("EPSG:3857")
+
+    gdf_filtered["geometry"] = gdf_filtered.geometry.centroid
+
+    # Пространственное соединение: исключаем здания, попавшие в промзоны
+    joined = gpd.sjoin(gdf_filtered, exclude_areas, how="left", predicate="within")
+    if "index_right" in joined.columns:
+        filtered = joined[joined["index_right"].isna()].copy()
+    else:
+        filtered = joined.copy()
+    # Вернем исходные геометрии зданий, которые прошли фильтрацию
+    result = gdf.loc[filtered.index].copy()
+    return result
 
 
 conn = psycopg2.connect(**db_params)
@@ -176,6 +222,7 @@ city = [
     for city in cursor.fetchall()
 ]
 for selectedCity in city:
+    print("Текущий город: ", selectedCity)
     polygon_krd = ox.geocode_to_gdf(selectedCity["osmid"])
 
     geoJson = json.loads(gpd.GeoSeries(polygon_krd["geometry"]).to_json())["features"][

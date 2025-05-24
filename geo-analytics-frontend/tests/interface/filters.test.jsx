@@ -9,6 +9,7 @@ import {
 	MAX_COMPETITORS,
 	MAX_AREA_COUNT,
 } from "@/utils/filters";
+import { describe, test, expect } from "vitest";
 
 describe("formatNumber utility", () => {
 	test("should format numbers with spaces for thousands", () => {

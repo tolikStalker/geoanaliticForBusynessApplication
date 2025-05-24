@@ -1,8 +1,8 @@
-import { screen, fireEvent, waitFor } from "@iting-library/react";
-import { customRender } from "@/it/it-utils.jsx";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { customRender } from "@/test/test-utils";
 import axios from "axios";
 import Auth from "@/pages/Auth";
-import { describe, it, expect, vi, beforeEach } from "viit";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("axios");
 const mockNavigate = vi.fn();
@@ -26,9 +26,8 @@ describe("Auth Component", () => {
 		expect(
 			screen.getByRole("heading", { name: /Вход в систему/i })
 		).toBeInTheDocument();
-		expect(
-			screen.getByPlaceholderText("example@mail.com")
-		).toBeInTheDocument();
+		expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+		expect(screen.getByLabelText(/пароль/i)).toBeInTheDocument();
 	});
 
 	it("switches to registration form", () => {
@@ -41,10 +40,10 @@ describe("Auth Component", () => {
 
 	it("shows client-side validation error for invalid email", async () => {
 		customRender(<Auth />);
-		fireEvent.change(screen.getByPlaceholderText("example@mail.com"), {
+		fireEvent.change(screen.getByLabelText(/email/i), {
 			target: { value: "invalid" },
 		});
-		fireEvent.change(screen.getByPlaceholderText("••••••••"), {
+		fireEvent.change(screen.getByLabelText(/пароль/i), {
 			target: { value: "pass123" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: /Войти/i }));
@@ -59,10 +58,10 @@ describe("Auth Component", () => {
 
 		customRender(<Auth />, { setUser });
 
-		fireEvent.change(screen.getByPlaceholderText("example@mail.com"), {
+		fireEvent.change(screen.getByLabelText(/email/i), {
 			target: { value: "it@example.com" },
 		});
-		fireEvent.change(screen.getByPlaceholderText("••••••••"), {
+		fireEvent.change(screen.getByLabelText(/пароль/i), {
 			target: { value: "password123" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: /Войти/i }));
@@ -80,5 +79,4 @@ describe("Auth Component", () => {
 			expect(mockNavigate).toHaveBeenCalledWith("/analyze")
 		);
 	});
-	// ... другие тесты на ошибки, регистрацию
 });

@@ -3,33 +3,26 @@ import L from "leaflet";
 import { scaleLog } from "d3-scale";
 import { interpolateRdYlGn } from "d3-scale-chromatic";
 
-const rentIconUrl =
-	"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png"; // Пример: зеленый маркер
-const competitorIconUrl =
-	"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png"; // Пример: красный маркер
+const rentIconUrl = "/icons/marker-icon-green.png";
+const competitorIconUrl = "/icons/marker-icon-red.png";
 
 const rentIcon = new L.Icon({
 	iconUrl: rentIconUrl,
-	iconSize: [25, 41], // Подберите размер под вашу CDN иконку
-	iconAnchor: [12, 41], // Подберите якорь
-	popupAnchor: [1, -34], // Подберите якорь попапа
-	shadowSize: [41, 41], // Размер тени
+	iconSize: [25, 41],
+	iconAnchor: [12, 41],
+	popupAnchor: [1, -34],
 });
 
 const competitorIcon = new L.Icon({
 	iconUrl: competitorIconUrl,
-	iconSize: [25, 41], // Подберите размер
-	iconAnchor: [12, 41], // Подберите якорь
-	popupAnchor: [1, -34], // Подберите якорь попапа
-	shadowSize: [41, 41],
+	iconSize: [25, 41],
+	iconAnchor: [12, 41],
+	popupAnchor: [1, -34],
 });
 
-// Fallback default icon (оставляем стандартный)
 const defaultIcon = L.icon({
-	iconRetinaUrl:
-		"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
-	iconUrl:
-		"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
+	iconRetinaUrl: "/icons/marker-icon-2x.png",
+	iconUrl: "/icons/marker-icon-2x.png",
 	iconSize: [25, 41],
 	iconAnchor: [12, 41],
 	popupAnchor: [1, -34],
@@ -37,27 +30,35 @@ const defaultIcon = L.icon({
 });
 
 L.Marker.prototype.options.icon = defaultIcon;
+
 const formatNumber = (value) => {
 	if (value === "" || value === null || value === undefined) return "";
-	const num = parseFloat(value.toString().replace(/\D/g, "")); // Удаляем нечисловые символы
+	const num = parseFloat(value.toString().replace(/\D/g, ""));
 	if (isNaN(num)) return "";
 	return num.toLocaleString("ru-RU", { minimumFractionDigits: 0 });
 };
 
+const onEachPopulationHex = (feature, layer) => {
+	const pop = feature?.properties?.pop ?? "N/A";
+	layer.bindPopup(`<b>Население:</b> ${pop.toLocaleString()} чел.`, {
+		className: "popup-hex",
+	});
+};
+
 function getHexColor(pop, popMax) {
-	if (!pop || pop <= 0 || !popMax || popMax <= 0) return "#f7fcb9"; // безопасный цвет
+	if (!pop || pop <= 0 || !popMax || popMax <= 0) return "#f7fcb9";
 
 	const scale = scaleLog().domain([1, popMax]).range([0, 1]).clamp(true);
 
-	return interpolateRdYlGn(scale(pop)); // от светло-желтого к зелёному
+	return interpolateRdYlGn(scale(pop));
 }
 
-export default function Map({ center, zoom, analysisResult, visibleLayers }) {
+export default function Map({ center, zoom, analysisResult, visibleLayers,circleRefs }) {
 	const mapRef = useRef(null);
 	const mapInstance = useRef(null);
+
 	const hexStyle = useCallback(
 		(feature) => {
-			// население хранится в feature.properties.population
 			const pop = feature.properties.pop;
 			const maxPop = analysisResult?.hexs?.max;
 			return {
@@ -75,23 +76,16 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 			style: { color: "red", weight: 2, fillOpacity: 0.1 },
 		}),
 		population: L.geoJSON(null, {
-			// Use GeoJSON for hex grid
-			style: hexStyle, // Define hexStyle function below or inline
-			onEachFeature: (feature, layer) => {
-				const pop = feature?.properties?.pop ?? "N/A";
-				layer.bindPopup(
-					`<b>Население:</b> ${pop.toLocaleString()} чел.`,{className:"popup-hex"}
-				);
-			},
+			style: hexStyle,
+			onEachFeature: onEachPopulationHex,
 		}),
 		rent: L.layerGroup(),
 		competitors: L.layerGroup(),
 		zones: L.layerGroup(),
-		legend: null, // To store the legend control instance
+		legend: null,
 	});
 
 	useEffect(() => {
-		// Инициализация карты
 		if (!mapInstance.current && mapRef.current) {
 			mapInstance.current = L.map(mapRef.current, {
 				center: center,
@@ -99,13 +93,11 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 				zoomControl: false,
 			});
 
-			// Добавление тайлов OpenStreetMap
 			L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 				attribution:
 					'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
 			}).addTo(mapInstance.current);
 
-			// Добавление кастомного контрола зума
 			L.control
 				.zoom({
 					position: "bottomright",
@@ -117,10 +109,8 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 			mapInstance.current.setView(center, zoom);
 		}
 
-		// Очистка при размонтировании
 		return () => {
 			if (mapInstance.current) {
-				// Clean up layer groups and controls before removing map
 				Object.values(layerGroups.current).forEach((layer) => {
 					if (layer && mapInstance.current.hasLayer(layer)) {
 						mapInstance.current.removeLayer(layer);
@@ -135,15 +125,12 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 				mapInstance.current.remove();
 				mapInstance.current = null;
 				layerGroups.current = {
-					// Reset refs
 					bounds: L.geoJSON(null, {
 						style: { color: "red", weight: 2, fillOpacity: 0.1 },
 					}),
 					population: L.geoJSON(null, {
 						style: hexStyle,
-						// onEachFeature: (f, l) => {
-						// 	/* popup */
-						// },
+						onEachFeature: onEachPopulationHex,
 					}),
 					rent: L.layerGroup(),
 					competitors: L.layerGroup(),
@@ -156,7 +143,6 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 
 	useEffect(() => {
 		if (!mapInstance.current || !analysisResult) {
-			// Clear all dynamic layers if analysisResult becomes null
 			layerGroups.current.bounds.clearLayers();
 			layerGroups.current.population.clearLayers();
 			layerGroups.current.rent.clearLayers();
@@ -170,7 +156,6 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 			return;
 		}
 
-		// Если слой границ уже добавлен, удаляем его
 		layerGroups.current.bounds.clearLayers();
 		layerGroups.current.population.clearLayers();
 		layerGroups.current.rent.clearLayers();
@@ -182,14 +167,11 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 			layerGroups.current.legend = null;
 		}
 
-		// Добавляем границы города
 		if (analysisResult.bounds) {
 			layerGroups.current.bounds.addData(analysisResult.bounds);
 		}
 
-		// Добавляем гексагоны
 		if (analysisResult.hexs) {
-			// Re-apply style based on potentially new max value
 			layerGroups.current.population.options.style = hexStyle;
 			layerGroups.current.population.addData(analysisResult.hexs);
 		}
@@ -197,19 +179,18 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 		if (analysisResult.rent_places?.length > 0) {
 			analysisResult.rent_places.forEach((place) => {
 				if (place.coordinates && place.coordinates.length === 2) {
-					// Basic validation
 					const marker = L.marker(place.coordinates, {
 						icon: rentIcon,
-					}) // Use custom icon
-						.bindPopup(
-							`<b>Аренда:</b> <a href="https://cian.ru/rent/commercial/${
-								place.id
-							}" target="_blank" rel="noopener noreferrer">ID ${
-								place.id
-							}</a><br><b>Стоимость:</b> ${formatNumber(
-								place.price
-							)} ₽<br><b>Площадь:</b> ${place.total_area} м²`,{className:"popup-rent"}
-						);
+					}).bindPopup(
+						`<b>Аренда:</b> <a href="https://cian.ru/rent/commercial/${
+							place.id
+						}" target="_blank" rel="noopener noreferrer">ID ${
+							place.id
+						}</a><br><b>Стоимость:</b> ${formatNumber(
+							place.price
+						)} ₽<br><b>Площадь:</b> ${place.total_area} м²`,
+						{ className: "popup-rent" }
+					);
 					layerGroups.current.rent.addLayer(marker);
 				} else {
 					console.warn(
@@ -220,21 +201,19 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 			});
 		}
 
-		// Добавление новых маркеров
 		if (analysisResult.competitors?.length > 0) {
 			analysisResult.competitors.forEach((place) => {
 				if (place.coordinates && place.coordinates.length === 2) {
-					// Basic validation
 					const marker = L.marker(place.coordinates, {
 						icon: competitorIcon,
-					}) // Use custom icon
-						.bindPopup(
-							`<b>${
-								place.name || "Конкурент"
-							}</b><br><b>Рейтинг:</b> ${
-								place.rate ?? "N/A"
-							}<br><b>Отзывов:</b> ${place.rate_count ?? "N/A"}`,{className:"popup-competitor"}
-						);
+					}).bindPopup(
+						`<b>${
+							place.name || "Конкурент"
+						}</b><br><b>Рейтинг:</b> ${
+							place.rate ?? "N/A"
+						}<br><b>Отзывов:</b> ${place.rate_count ?? "N/A"}`,
+						{ className: "popup-competitor" }
+					);
 					layerGroups.current.competitors.addLayer(marker);
 				} else {
 					console.warn(
@@ -245,7 +224,6 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 			});
 		}
 
-		// Добавление новых маркеров
 		if (
 			analysisResult.locations?.length > 0 &&
 			analysisResult.circle_radius_km
@@ -258,12 +236,14 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 						color: "blue",
 						weight: 2,
 						fillOpacity: 0.1,
-						interactive: true,
 					}).bindPopup(
 						`<b>Расч. население:</b> ${
 							loc.pop_sum?.toLocaleString() ?? "N/A"
-						}`,{className:"popup-zone"}
+						}`,
+						{ className: "popup-zone" }
 					);
+
+					circleRefs.current[loc.id]=circle;
 					layerGroups.current.zones.addLayer(circle);
 				} else {
 					console.warn("Invalid center for location zone:", loc);
@@ -281,7 +261,6 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 				);
 				const maxPop = analysisResult.hexs.max;
 
-				// Генерация меток для логарифмической шкалы
 				const generateLogLabels = (max) => {
 					const labels = new Set([0]);
 					const maxOrder = Math.ceil(Math.log10(Math.max(max, 10)));
@@ -335,7 +314,7 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 				return div;
 			};
 
-			layerGroups.current.legend = legend; // Store the legend instance
+			layerGroups.current.legend = legend;
 
 			if (visibleLayers?.population && mapInstance.current) {
 				legend.addTo(mapInstance.current);
@@ -347,14 +326,12 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 		if (!mapInstance.current || !visibleLayers) return;
 
 		Object.keys(visibleLayers).forEach((key) => {
-			const layer = layerGroups.current[key]; // Get layer group or control by key
+			const layer = layerGroups.current[key];
 			const shouldBeVisible = visibleLayers[key];
 
-			if (!layer) return; // Skip if layer group doesn't exist for this key
+			if (!layer) return;
 
-			// Handle Layer Groups
 			if (layer instanceof L.Layer) {
-				// Check if it's a Leaflet layer/group
 				if (shouldBeVisible && !mapInstance.current.hasLayer(layer)) {
 					mapInstance.current.addLayer(layer);
 				} else if (
@@ -363,11 +340,8 @@ export default function Map({ center, zoom, analysisResult, visibleLayers }) {
 				) {
 					mapInstance.current.removeLayer(layer);
 				}
-			}
-			// Handle Legend Control separately
-			else if (key === "legend" && layer instanceof L.Control) {
+			} else if (key === "legend" && layer instanceof L.Control) {
 				if (visibleLayers.population && !layer._map) {
-					// Legend visibility depends on population layer
 					layer.addTo(mapInstance.current);
 				} else if (!visibleLayers.population && layer._map) {
 					mapInstance.current.removeControl(layer);

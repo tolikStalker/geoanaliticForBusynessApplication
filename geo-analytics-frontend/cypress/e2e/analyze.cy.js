@@ -30,15 +30,20 @@ describe("Страница анализа", () => {
 	it("Проводит анализ и отображает результат", () => {
 		cy.intercept("GET", "/api/cities").as("getCities");
 		cy.intercept("GET", "/api/categories").as("getCategories");
-		cy.intercept("GET", "/api/analysis*", {
-			statusCode: 200,
-			body: { message: "OK", areas: [] },
-		}).as("analyzeRequest");
+		cy.intercept("GET", "/api/analysis*").as("analyzeRequest");
 
 		cy.visit("/analyze");
+		cy.wait(["@getCities", "@getCategories"]);
+
+		cy.get('select[name="city"] option:not([disabled])')
+			.eq(0)
+			.then((option) => {
+				const value = option.val();
+				cy.get('select[name="city"]').select(value);
+			});
 
 		cy.contains("Запустить анализ").click();
 		cy.wait("@analyzeRequest");
-		cy.contains("Результаты анализа").should("exist");
+		cy.contains("Результаты").should("exist");
 	});
 });

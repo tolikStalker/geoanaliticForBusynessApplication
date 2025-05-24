@@ -117,6 +117,7 @@ export default function Auth() {
 										? "top-[-0px] text-xs opacity-30"
 										: "-translate-y-1/2 text-base"
 								}`}
+								htmlFor="username"
 							>
 								Email
 							</label>
@@ -124,6 +125,7 @@ export default function Auth() {
 								type="email"
 								pattern="^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
 								name="username"
+								id="username"
 								required
 								className="input-field"
 								placeholder={
@@ -145,12 +147,14 @@ export default function Auth() {
 										? "top-[-0px] text-xs opacity-30"
 										: "-translate-y-1/2 text-base"
 								}`}
+								htmlFor="password"
 							>
 								Пароль
 							</label>
 							<input
 								type="password"
 								name="password"
+								id="password"
 								required
 								className="input-field"
 								placeholder={

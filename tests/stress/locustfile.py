@@ -2,9 +2,8 @@ import random
 import uuid
 from locust import HttpUser, TaskSet, task, between, tag
 
-# --- Константы ---
 MIN_RADIUS = 0.5
-MAX_RADIUS = 5.0
+MAX_RADIUS = 2.0
 MIN_RENT = 0
 MAX_RENT = 100000000
 REALISTIC_MAX_RENT = 500000
@@ -13,11 +12,9 @@ MAX_COMPETITORS = 20
 MIN_AREA_COUNT = 1
 MAX_AREA_COUNT = 100
 
-# --- Глобальные переменные для общих данных (загружаются один раз) ---
-# Лучше использовать locust events для этого, но для простоты оставим так с флагом
 available_cities = []
 available_categories = []
-initial_data_loaded = False  # Флаг, чтобы загрузить данные один раз
+initial_data_loaded = False
 
 
 def get_random_city_id():
@@ -90,14 +87,10 @@ class UserBehavior(TaskSet):
     @task(5)
     @tag("analysis")
     def get_valid_analysis(self):
-        if (
-            not self.user.is_logged_in
-        ):  # Проверяем, залогинен ли пользователь этого HttpUser
-            # print(f"User {self.user.username} is not logged in, skipping get_valid_analysis.")
-            return  # Пропускаем, если не залогинен
+        if not self.user.is_logged_in:
+            return
 
         if not available_cities or not available_categories:
-            # print("Skipping get_valid_analysis: cities or categories not loaded by UserBehavior.on_start.")
             return
 
         params = {
@@ -129,9 +122,7 @@ class UserBehavior(TaskSet):
                 response.failure(
                     f"get_valid_analysis UNAUTHORIZED: {response.status_code} - {params}"
                 )
-            elif (
-                response.status_code == 404
-            ):  # Ожидаемая ошибка, если ID города/категории случайно не существует
+            elif response.status_code == 404:
                 response.success()
             else:
                 response.failure(
@@ -142,10 +133,8 @@ class UserBehavior(TaskSet):
     @tag("analysis_validation")
     def get_analysis_validation_errors(self):
         if not self.user.is_logged_in:
-            # print(f"User {self.user.username} is not logged in, skipping get_analysis_validation_errors.")
             return
 
-        # ... (ваш код для test_cases остается таким же) ...
         base_valid_params = {
             "city_id": get_random_city_id(),
             "category_id": get_random_category_id(),
@@ -269,7 +258,7 @@ class UserBehavior(TaskSet):
 
     @task(1)
     @tag("public_data")
-    def get_public_cities(self):  # Отдельная задача для публичных данных
+    def get_public_cities(self):
         with self.client.get(
             "/api/cities", name="/api/cities (public)", catch_response=True
         ) as response:
@@ -289,7 +278,7 @@ class UserBehavior(TaskSet):
 
     @task(1)
     @tag("public_data")
-    def get_public_categories(self):  # Отдельная задача для публичных данных
+    def get_public_categories(self):
         with self.client.get(
             "/api/categories", name="/api/categories (public)", catch_response=True
         ) as response:
@@ -311,19 +300,18 @@ class UserBehavior(TaskSet):
 class AuthenticatedApiUser(HttpUser):
     host = "http://localhost:5000"
 
-    tasks = [UserBehavior]  # Все задачи теперь в UserBehavior
+    tasks = [UserBehavior]
     wait_time = between(1, 3)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.username = f"testlocust_{uuid.uuid4().hex[:8]}"
-        self.password = "locustpassword"
-        self.is_logged_in = False  # Флаг на уровне HttpUser
+        self.username = f"{uuid.uuid4().hex[:8]}@testlocust.ru"
+        self.password = "locustpassword1"
+        self.is_logged_in = False
 
     def on_start(self):
         """Логин или регистрация при старте пользователя Locust."""
         print(f"User {self.username} starting...")
-        # Сначала пытаемся залогиниться, если не получается и пользователя нет -> регистрируемся
         with self.client.post(
             "/login",
             json={"username": self.username, "password": self.password},
@@ -338,7 +326,6 @@ class AuthenticatedApiUser(HttpUser):
                 r_login.status_code == 404
                 and "user does not exist" in r_login.json().get("error", "").lower()
             ):
-                # Пользователя нет
                 print(
                     f"User {self.username} does not exist, attempting registration (on_start)."
                 )
@@ -352,9 +339,7 @@ class AuthenticatedApiUser(HttpUser):
                         print(
                             f"User {self.username} registered and logged in successfully (on_start)."
                         )
-                        self.is_logged_in = (
-                            True  # Flask-Login обычно логинит после регистрации
-                        )
+                        self.is_logged_in = True
                         r_login.success()
                         r_reg.success()
                     else:
@@ -363,15 +348,13 @@ class AuthenticatedApiUser(HttpUser):
                         )
                         self.is_logged_in = False
                         r_reg.failure(f"Registration failed: {r_reg.status_code}")
-            elif (
-                r_login.status_code == 401
-            ):  # Неверный пароль (если пользователь уже был создан ранее с другим)
+            elif r_login.status_code == 401:
                 print(
                     f"User {self.username} login failed - incorrect password (on_start). Will not be logged in."
                 )
                 self.is_logged_in = False
-                r_login.success()  # Считаем это "успехом" для попытки логина, т.к. ответ ожидаемый
-            else:  # Другие ошибки логина
+                r_login.success()
+            else:
                 print(
                     f"User {self.username} login failed (on_start) with status {r_login.status_code}: {r_login.text}"
                 )
@@ -382,7 +365,7 @@ class AuthenticatedApiUser(HttpUser):
                 f"WARNING: User {self.username} could not log in or register. Protected tasks will be skipped."
             )
 
-    @task(1)  # Задача для выхода из системы, менее частая
+    @task(1)
     @tag("logout")
     def logout(self):
         if self.is_logged_in:
@@ -393,13 +376,10 @@ class AuthenticatedApiUser(HttpUser):
                     print(f"User {self.username} logged out.")
                     self.is_logged_in = False
                     response.success()
-                    # Можно добавить логику для повторного входа или остановки пользователя
-                    self.on_start()  # Попробуем снова залогиниться/зарегистрироваться
+                    self.on_start()
                 else:
                     response.failure(
                         f"Logout failed: {response.status_code} - {response.text[:100]}"
                     )
         else:
-            # Если не залогинен, может быть, стоит попытаться войти? Или просто ничего не делать.
-            # print(f"User {self.username} tried to logout but was not logged in.")
-            pass  # Ничего не делаем, если не залогинен
+            pass

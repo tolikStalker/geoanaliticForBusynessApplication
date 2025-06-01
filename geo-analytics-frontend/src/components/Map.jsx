@@ -53,7 +53,14 @@ function getHexColor(pop, popMax) {
 	return interpolateRdYlGn(scale(pop));
 }
 
-export default function Map({ center, zoom, analysisResult, visibleLayers,circleRefs }) {
+export default function Map({
+	center,
+	zoom,
+	analysisResult,
+	visibleLayers,
+	circleRefs,
+	onMarkersReady,
+}) {
 	const mapRef = useRef(null);
 	const mapInstance = useRef(null);
 
@@ -167,6 +174,10 @@ export default function Map({ center, zoom, analysisResult, visibleLayers,circle
 			layerGroups.current.legend = null;
 		}
 
+		if (analysisResult) {
+			if (onMarkersReady) onMarkersReady();
+		}
+
 		if (analysisResult.bounds) {
 			layerGroups.current.bounds.addData(analysisResult.bounds);
 		}
@@ -243,7 +254,7 @@ export default function Map({ center, zoom, analysisResult, visibleLayers,circle
 						{ className: "popup-zone" }
 					);
 
-					circleRefs.current[loc.id]=circle;
+					circleRefs.current[loc.id] = circle;
 					layerGroups.current.zones.addLayer(circle);
 				} else {
 					console.warn("Invalid center for location zone:", loc);
@@ -320,7 +331,7 @@ export default function Map({ center, zoom, analysisResult, visibleLayers,circle
 				legend.addTo(mapInstance.current);
 			}
 		}
-	}, [analysisResult, hexStyle, visibleLayers?.population]);
+	}, [analysisResult, circleRefs, hexStyle, onMarkersReady, visibleLayers?.population]);
 
 	useEffect(() => {
 		if (!mapInstance.current || !visibleLayers) return;

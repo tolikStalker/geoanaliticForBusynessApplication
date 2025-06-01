@@ -27,7 +27,7 @@ describe("Analyze Component", () => {
 					competitors: [{ id: 1, name: "Comp1" }],
 					hexs: {
 						type: "FeatureCollection",
-						features: [], // или реальные фичи, если есть
+						features: [], 
 						total: 1000,
 					},
 					rent_places: [{ id: 1, address: "Place 1" }],
@@ -46,8 +46,7 @@ describe("Analyze Component", () => {
 			</MemoryRouter>
 		);
 
-		// Проверяем лоадер
-		expect(screen.getByText(/Идет анализ.../i)).toBeInTheDocument(); // или другой текст лоадера
+		expect(screen.getByText(/Идет анализ.../i)).toBeInTheDocument(); 
 
 		await waitFor(() => {
 			expect(axios.get).toHaveBeenCalledWith(
@@ -63,12 +62,11 @@ describe("Analyze Component", () => {
 		await waitFor(() => {
 			expect(
 				screen.getByRole("option", { name: "Москва" }).selected
-			).toBe(true); // Если это первый город
+			).toBe(true); 
 			expect(screen.getByRole("option", { name: "Кафе" }).selected).toBe(
 				true
-			); // Если это первая категория
+			); 
 		});
-		// Проверяем, что лоадер исчез
 		expect(screen.queryByText(/Идет анализ.../i)).not.toBeInTheDocument();
 	});
 
@@ -77,7 +75,7 @@ describe("Analyze Component", () => {
 			competitors: [{ id: 1, name: "Comp1" }],
 			hexs: {
 				type: "FeatureCollection",
-				features: [], // или реальные фичи, если есть
+				features: [], ь
 				total: 1000,
 			},
 			rent_places: [{ id: 1, address: "Place 1" }],
@@ -85,7 +83,6 @@ describe("Analyze Component", () => {
 			avg_for_square: "1 000",
 		};
 		axios.get.mockImplementation((url) => {
-			// Переопределяем мок для этого теста
 			if (url.includes("/api/cities"))
 				return Promise.resolve({ data: mockCities });
 			if (url.includes("/api/categories"))
@@ -101,7 +98,6 @@ describe("Analyze Component", () => {
 			</MemoryRouter>
 		);
 
-		// Дожидаемся загрузки справочников
 		await waitFor(() =>
 			expect(
 				screen.getByRole("button", { name: /Запустить анализ/i })
@@ -112,13 +108,13 @@ describe("Analyze Component", () => {
 			screen.getByRole("button", { name: /Запустить анализ/i })
 		);
 
-		expect(screen.getByText(/Идет анализ.../i)).toBeInTheDocument(); // Лоадер анализа
+		expect(screen.getByText(/Идет анализ.../i)).toBeInTheDocument(); 
 		await waitFor(() =>
 			expect(
 				screen.queryByText(/Идет анализ.../i)
 			).not.toBeInTheDocument()
 		).then(() => {
-			expect(screen.getByText("1 000 чел.")).toBeInTheDocument(); // hexs.total
+			expect(screen.getByText("1 000 чел.")).toBeInTheDocument(); 
 		});
 	});
 });

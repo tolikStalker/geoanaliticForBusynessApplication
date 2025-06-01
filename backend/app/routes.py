@@ -1,11 +1,7 @@
 from flask import Blueprint, jsonify, request, session, current_app
 from app.models import (
     City,
-    Organization,
-    CianListing,
     Category,
-    Hexagon,
-    CityBound,
     User,
     AnalysisRequest,
 )
@@ -14,16 +10,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from . import login_manager
 from .extensions import db
 import math
-from shapely.wkb import loads as load_wkb
-from shapely.geometry import mapping
-from geoalchemy2.shape import to_shape
 import h3
 import datetime
+from functools import lru_cache
 
 main_bp = Blueprint("main", __name__)
 
 MIN_RADIUS = 0.5
-MAX_RADIUS = 5.0
+MAX_RADIUS = 2.0
 MIN_RENT = 0
 MAX_RENT = 100000000
 MIN_COMPETITORS = 1
@@ -199,18 +193,17 @@ def get_analysis_history():
         return jsonify({"message": "Не удалось получить историю запросов."}), 500
 
 
-@main_bp.route("/api/cities", methods=["GET"])
-def get_cities():
-    """Получение списка доступных городов"""
-    cities = City.query.all()
+@lru_cache()
+def get_cities_cached():
+    from app.models import City
+    from shapely.wkb import loads as load_wkb
+    from flask import current_app
 
+    cities = City.query.all()
     result = []
     for city in cities:
         try:
-            point = load_wkb(
-                bytes(city.center.data)
-            )  # безопасная конвертация WKB → shapely Point
-
+            point = load_wkb(bytes(city.center.data))
             result.append(
                 {
                     "id": city.id,
@@ -223,16 +216,15 @@ def get_cities():
         except Exception as e:
             current_app.logger.error(f"Ошибка при обработке города ID={city.id}: {e}")
             continue
-
-    print(f"Ответ: {result}")  # Логирование данных перед отправкой
-    return jsonify(result)
+    return result
 
 
-@main_bp.route("/api/categories", methods=["GET"])
-def get_categories():
-    """Получение списка категорий"""
+@lru_cache()
+def get_categories_cached():
+    from app.models import Category
+    from flask import current_app
+
     categories = Category.query.all()
-
     result = []
     for category in categories:
         try:
@@ -244,15 +236,59 @@ def get_categories():
             )
         except Exception as e:
             current_app.logger.error(
-                f"Ошибка при обработке огранизации ID={category.id}: {e}"
+                f"Ошибка при обработке категории ID={category.id}: {e}"
             )
             continue
-
-    print(f"Ответ: {result}")  # Логирование данных перед отправкой
-    return jsonify(result[1:])
+    return result[1:]
 
 
-from flask import current_app
+@main_bp.route("/api/cities", methods=["GET"])
+def get_cities():
+    result = get_cities_cached()
+    print(f"Ответ: {result}")
+    return jsonify(result)
+
+
+@main_bp.route("/api/categories", methods=["GET"])
+def get_categories():
+    result = get_categories_cached()
+    print(f"Ответ: {result}")
+    return jsonify(result)
+
+
+@lru_cache(maxsize=512)
+def compute_analysis(
+    city_id, category_id, radius_km, rent_limit, max_competitors_count, n_areas
+):
+    rent_places = get_rental_places(city_id, rent_limit)
+    competitors = get_competitors(city_id, category_id)
+    hexs_geojson = get_hexs(city_id)
+    radius_m = radius_km * 1000
+
+    locations = find_top_zones(
+        [geo["properties"] for geo in hexs_geojson["features"]],
+        competitors,
+        10,
+        radius_m,
+        max_competitors_count,
+        n_areas,
+    )
+
+    for i, location in enumerate(locations):
+        location["id"] = i
+
+    return {
+        "locations": locations,  # Список найденных локаций
+        "circle_radius_km": radius_km,
+        "rent_places": rent_places,
+        "avg_rent": calculate_avg_rent(rent_places) if rent_places else None,
+        "avg_for_square": (
+            calculate_avg_cost_for_square(rent_places) if rent_places else None
+        ),
+        "competitors": competitors,
+        "bounds": get_bound(city_id),
+        "hexs": hexs_geojson,
+    }
 
 
 @main_bp.route("/api/analysis", methods=["GET"])
@@ -288,24 +324,9 @@ def get_analysis():
     if not category:
         return jsonify({"message": f"Категория с ID {category_id} не найдена."}), 404
 
-    rent_places = get_rental_places(city_id, rent_limit)
-    competitors = get_competitors(city_id, category_id)
-    hexs_geojson = get_hexs(city_id)
-
-    radius_m = radius_km * 1000
-
-    locations = find_top_zones(
-        [geo["properties"] for geo in hexs_geojson["features"]],
-        competitors,
-        10,
-        radius_m,
-        max_competitors_count,
-        n_areas,
+    result = compute_analysis(
+        city_id, category_id, radius_km, rent_limit, max_competitors_count, n_areas
     )
-    print(current_user.id)
-    
-    for i, location in enumerate(locations):
-        location["id"] = i
 
     try:
         history_entry = AnalysisRequest(
@@ -325,21 +346,7 @@ def get_analysis():
             f"Failed to save analysis history for user {current_user.id}: {e}"
         )
 
-    return jsonify(
-        {
-            "user": current_user.id,
-            "locations": locations,  # Список найденных локаций
-            "circle_radius_km": radius_km,
-            "rent_places": rent_places,
-            "avg_rent": calculate_avg_rent(rent_places) if rent_places else None,
-            "avg_for_square": (
-                calculate_avg_cost_for_square(rent_places) if rent_places else None
-            ),
-            "competitors": competitors,
-            "bounds": get_bound(city_id),
-            "hexs": hexs_geojson,
-        }
-    )
+    return jsonify(result)
 
 
 @login_manager.unauthorized_handler
@@ -352,12 +359,35 @@ def load_user(user_id):
     return db.session.get(User, int(user_id))
 
 
+import re
+
+USERNAME_REGEX = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+
 @main_bp.route("/register", methods=["POST"])
 def register():
+    current_app.logger.warning(f"Current user: {current_user.is_authenticated}")
     if current_user.is_authenticated:
         return jsonify({"error": "Already logged in"}), 400
 
     data = request.json
+    username = data.get("username")
+    password = data.get("password")
+
+    current_app.logger.warning(f"Username: {username}")
+    current_app.logger.warning(
+        f"User exists: {User.query.filter_by(username=username).first()}"
+    )
+
+    if not username or not password:
+        return jsonify({"error": "Username and password required"}), 400
+
+    if not USERNAME_REGEX.match(username):
+        return jsonify({"error": "Invalid username format"}), 400
+
+    if len(password) < 6:
+        return jsonify({"error": "Password too short"}), 400
+
     if User.query.filter_by(username=data["username"]).first():
         return jsonify({"error": "User already exists"}), 400
 
@@ -407,51 +437,72 @@ def me():
     return jsonify({"error": "Not logged in"}), 401
 
 
+from sqlalchemy import func
+
+
+@lru_cache(maxsize=128)
 def get_competitors(city_id, category_id):
+    from app.models import Organization, Category
+    from sqlalchemy import func
+
     """Получение конкурентов в заданном радиусе"""
-    competitors = Organization.query.filter(
+    query = db.session.query(
+        func.ST_Y(Organization.coordinates).label("lat"),
+        func.ST_X(Organization.coordinates).label("lon"),
+        Organization.name,
+        Organization.strength.label("strength")
+    ).filter(
         Organization.city_id == city_id,
         Organization.categories.any(Category.id == category_id),
-    ).all()
+        
+    )
+
+    competitors_data = query.all()
 
     result = []
-    for competitor in competitors:
+    for comp_data in competitors_data:
         try:
-            point = load_wkb(bytes(competitor.coordinates.data))
             result.append(
                 {
-                    # "id": competitor.id,
-                    "coordinates": [point.y, point.x],
-                    "name": competitor.name,
-                    "rate": competitor.rate,
-                    "rate_count": competitor.rate_count,
+                    "coordinates": [comp_data.lat, comp_data.lon],
+                    "name": comp_data.name,
+                    "strength": comp_data.strength
                 }
             )
         except Exception as e:
-            current_app.logger.warning(
-                f"Ошибка при обработке аренды ID={competitor.id}: {e}"
-            )
+            current_app.logger.warning(f"Ошибка при обработке конкурента: {e}")
             continue
 
     return result
 
 
+@lru_cache(maxsize=32)
 def get_rental_places(city_id, rent_limit):
+    from app.models import CianListing
+    from sqlalchemy import func
+    from flask import current_app
+
     """Получение мест аренды в заданном радиусе"""
-    # Поиск мест аренды в радиусе
-    rental_places = CianListing.query.filter(
+    query = db.session.query(
+        func.ST_Y(CianListing.coordinates).label("lat"),
+        func.ST_X(CianListing.coordinates).label("lon"),
+        CianListing.cian_id,
+        CianListing.price,
+        CianListing.total_area,
+    ).filter(
         CianListing.city_id == city_id,
-        CianListing.price <= rent_limit,  # Фильтрация по цене аренды
-    ).all()
+        CianListing.price <= rent_limit,
+    )
+
+    rent_data = query.all()
 
     result = []
-    for rental in rental_places:
+    for rental in rent_data:
         try:
-            point = load_wkb(bytes(rental.coordinates.data))
             result.append(
                 {
                     "id": rental.cian_id,
-                    "coordinates": [point.y, point.x],
+                    "coordinates": [rental.lat, rental.lon],
                     "price": rental.price,
                     "total_area": rental.total_area,
                 }
@@ -465,48 +516,91 @@ def get_rental_places(city_id, rent_limit):
     return result
 
 
+import json
+
+
+@lru_cache(maxsize=32)
 def get_hexs(city_id):
-    hexagons = Hexagon.query.filter_by(city_id=city_id).all()
+    from app.models import Hexagon
+    from sqlalchemy import func
+    from flask import current_app
 
-    populations = [hex.population for hex in hexagons]
-    max_pop = max(populations)
-    total_pop = sum(populations)
+    query = db.session.query(
+        Hexagon.population,
+        Hexagon.id.label("hex_id"),
+        func.ST_AsGeoJSON(Hexagon.geometry).label("geometry_geojson_str"),
+    ).filter(Hexagon.city_id == city_id)
 
-    geojson = {
+    hex_rows = query.all()
+    features = []
+    populations_for_stats = []
+
+    for row in hex_rows:
+        try:
+            geometry_dict = json.loads(row.geometry_geojson_str)
+
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": geometry_dict,
+                    "properties": {
+                        "pop": row.population,
+                        "hex_id": row.hex_id,
+                    },
+                }
+            )
+            if row.population is not None:  # Для корректного расчета max/sum
+                populations_for_stats.append(row.population)
+        except Exception as e:
+            current_app.logger.error(
+                f"Ошибка при обработке гексагона (id: {row.hex_id if hasattr(row, 'hex_id') else 'N/A'}): {e}"
+            )
+            continue
+
+    stats_query = db.session.query(
+        func.max(Hexagon.population).label("max_pop"),
+        func.sum(Hexagon.population).label("total_pop"),
+    ).filter(Hexagon.city_id == city_id)
+    stats_result = stats_query.one()
+
+    geojson_result = {
         "type": "FeatureCollection",
-        "features": [],
-        "max": max_pop,
-        "total": total_pop,
+        "features": features,
+        "max": (
+            stats_result.max_pop
+            if stats_result and stats_result.max_pop is not None
+            else 0
+        ),
+        "total": (
+            stats_result.total_pop
+            if stats_result and stats_result.total_pop is not None
+            else 0
+        ),
     }
-    for hex in hexagons:
-        shape = to_shape(hex.geometry)  # shapely geometry
-        geojson["features"].append(
-            {
-                "type": "Feature",
-                "geometry": mapping(shape),  # converts to GeoJSON geometry
-                "properties": {
-                    "pop": hex.population,
-                    "hex_id": hex.id,
-                },
-            }
-        )
 
-    return geojson
+    return geojson_result
 
 
+@lru_cache(maxsize=32)
 def get_bound(city_id):
-    bound = CityBound.query.filter_by(city_id=city_id).first()
+    from app.models import CityBound
+    from sqlalchemy import func
+    import json
 
-    if not bound:
-        return jsonify({"error": "Not found"}), 404
+    bound_geojson_str = (
+        db.session.query(func.ST_AsGeoJSON(CityBound.geometry))
+        .filter(CityBound.city_id == city_id)
+        .scalar()
+    )
 
-    geojson = {
+    if not bound_geojson_str:
+        return None
+
+    return {
         "type": "Feature",
-        "geometry": mapping(to_shape(bound.geometry)),
-        "properties": {"city_id": bound.city_id},
+        "geometry": json.loads(bound_geojson_str),
+        "properties": {"city_id": city_id},
     }
-
-    return geojson
 
 
 # Расчет средней аренды
@@ -532,79 +626,69 @@ from collections import defaultdict
 
 def find_top_zones(hexs, orgs, resolution, radius_m, max_comp, n):
     # 1. Подготовка: популяция по H3-клетке
-    pop_by_cell = {hex["hex_id"]: hex["pop"] for hex in hexs}
+    pop_by_cell = {h["hex_id"]: h["pop"] for h in hexs}
 
-    # 2. Сила конкурентов по клеткам
-    strength_by_cell = {}
+    # 2. Сила конкурентов по гексам
+    strength_by_cell = defaultdict(float)
     count = defaultdict(int)
     for org in orgs:
-        cell = h3.latlng_to_cell(
-            org["coordinates"][0], org["coordinates"][1], resolution
-        )
-        rate = org.get("rate")
-        rate = 1 if rate is None else rate
-        rate_count = org.get("rate_count")
-        rate_count = 1 if rate_count is None else rate_count
-        strength_by_cell[cell] = strength_by_cell.get(cell, 0) + rate * math.log10(
-            rate_count + 1
-        )
+        lat, lon = org["coordinates"]
+        cell = h3.latlng_to_cell(lat, lon, resolution)
+        strength_by_cell[cell] += org.get("strength") or 0
         count[cell] += 1
 
+    hex_ids = set(pop_by_cell) | set(strength_by_cell)
+    hex_ids = list(hex_ids)
     edge_m = h3.average_hexagon_edge_length(resolution, unit="m")
     cell_distance = edge_m * math.sqrt(3)
-    k = math.ceil(radius_m / cell_distance)
+    k = math.ceil(((radius_m-cell_distance/2) / cell_distance))
 
-    pop_get = pop_by_cell.get
-    str_get = strength_by_cell.get
-    count_get = count.get
+    @lru_cache(maxsize=8192)
+    def cached_grid_disk(cell, k):
+        return set(h3.grid_disk(cell, k))
+
+    neighbor_map = {cell: cached_grid_disk(cell, k) for cell in hex_ids}
 
     # 3. Генерация всех кандидатов
-    candidates = {}
-    neighbor_map = {cell: set(h3.grid_disk(cell, k)) for cell in pop_by_cell}
-    for cell, neighbors in neighbor_map.items():
-        # получаем все клетки и расстояния до центра
-        pop_sum0 = sum(pop_get(c, 0) for c in neighbors)
-        comp_strength0 = sum(str_get(c, 0) for c in neighbors)
-        comp_count0 = sum(count_get(c, 0) for c in neighbors)
-        avg_strength = comp_strength0 / (comp_count0 or 1)
-        # фильтруем по max_comp сразу
-        if comp_count0 > max_comp:
+    candidates = []
+    for cell in hex_ids:
+        neighbors = neighbor_map[cell]
+        pop_sum = sum(pop_by_cell.get(c, 0) for c in neighbors)
+        comp_strength = sum(strength_by_cell.get(c, 0) for c in neighbors)
+        comp_count = sum(count.get(c, 0) for c in neighbors)
+        avg_strength = comp_strength / (comp_count or 1)
+        if comp_count > max_comp:
             continue
         alpha = 0.01
-        score0 = pop_sum0 / (1 + alpha * avg_strength)
-        # гео‑координаты центра
+        score = pop_sum / (1 + alpha * avg_strength)
         lat, lon = h3.cell_to_latlng(cell)
-        candidates[cell] = {
-            "neighbors": neighbors,
-            "pop_sum": pop_sum0,
-            "comp_count": comp_count0,
-            "comp_strength": comp_strength0,
-            "score": score0,
-            "center": [lat, lon],
-        }
+        candidates.append(
+            {
+                "cell": cell,
+                "neighbors": neighbors,
+                "pop_sum": pop_sum,
+                "comp_count": comp_count,
+                "comp_strength": comp_strength,
+                "score": score,
+                "center": [lat, lon],
+            }
+        )
 
-    # 4. Жадный отбор n зон
-
-    sorted_cells = sorted(
-        candidates.items(),
-        key=lambda x: x[1]["pop_sum"],
-        reverse=True,
-    )
-
+    candidates.sort(key=lambda x: x["score"], reverse=True)
     selected = []
     covered = set()
-    for cell, data in sorted_cells:
-        if cell in covered:
+    for cand in candidates:
+        if cand["cell"] in covered:
             continue
         selected.append(
             {
-                "comp_count": data["comp_count"],
-                "center": data["center"],
-                "pop_sum": data["pop_sum"],
-                "comp_strength": data["comp_strength"],
+                "comp_count": int(cand["comp_count"]),
+                "center": [float(cand["center"][0]), float(cand["center"][1])],
+                "pop_sum": int(cand["pop_sum"]),
+                "comp_strength": float(cand["comp_strength"]),
             }
         )
-        covered |= data["neighbors"]
+        covered |= cand["neighbors"]
         if len(selected) >= n:
             break
 

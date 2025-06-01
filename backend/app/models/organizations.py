@@ -11,6 +11,7 @@ class Organization(db.Model):
     rate = db.Column(db.Float)
     rate_count = db.Column(db.Integer)
     coordinates = db.Column(Geometry(geometry_type="POINT", srid=4326))
+    strength=db.Column(db.Double)
     address = db.Column(db.String(255))
     last_updated = db.Column(db.DateTime, server_default=func.now())
     city = db.relationship("City", back_populates="organizations")

@@ -23,3 +23,5 @@ CREATE TABLE
 		category_id BIGINT REFERENCES categories (id) ON DELETE CASCADE,
 		PRIMARY KEY (organization_id, category_id)
 	);
+
+CREATE INDEX IF NOT EXISTS idx_org_cat_category_id_org_id ON organization_categories (category_id, organization_id);

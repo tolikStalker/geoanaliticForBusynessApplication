@@ -1,3 +1,15 @@
+Cypress.Commands.add("register", () => {
+	cy.request({
+		method: "POST",
+		url: "http://localhost:5000/register",
+		body: {
+			username: "test@example.com11",
+			password: "test123",
+		},
+		failOnStatusCode: false, // если пользователь уже существует — не упадёт
+	});
+});
+
 Cypress.Commands.add("login", () => {
 	cy.request("POST", "http://localhost:5000/login", {
 		username: "test@example.com11",
@@ -7,6 +19,7 @@ Cypress.Commands.add("login", () => {
 
 describe("Страница анализа", () => {
 	beforeEach(() => {
+		cy.register();
 		cy.login();
 		cy.visit("/analyze");
 	});

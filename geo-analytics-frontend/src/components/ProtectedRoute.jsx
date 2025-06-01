@@ -4,13 +4,10 @@ import { useUser } from "./UserContext.jsx";
 
 export default function ProtectedRoute({ children }) {
 	const navigate = useNavigate();
-	const { user, authChecked, loading } = useUser(); // Добавили loading для лучшей индикации
+	const { user, authChecked, loading } = useUser(); 
 
 	useEffect(() => {
 		if (authChecked && !user) {
-			console.log(
-				"ProtectedRoute: Auth checked, user not found, navigating to /auth"
-			);
 			navigate("/auth");
 		}
 	}, [user, navigate, authChecked]);

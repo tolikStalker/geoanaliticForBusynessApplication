@@ -62,7 +62,7 @@ describe("validateFilters utility", () => {
 	});
 
 	test("should handle radius as number instead of string", () => {
-		expect(validateFilters({ ...validFilters, radius: 2.5 })).toBeNull();
+		expect(validateFilters({ ...validFilters, radius: 1.5 })).toBeNull();
 	});
 
 	test("should return error for empty string fields", () => {

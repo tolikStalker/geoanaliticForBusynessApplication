@@ -9,9 +9,46 @@ from shapely.geometry import Polygon
 import json
 from sqlalchemy import create_engine, text
 from shapely.geometry import MultiPolygon
+import matplotlib.pyplot as plt
+import matplotlib as mpl
 
 
-# Функция для расчета населения на основе характеристик зданий
+def plot_hexagons_population(hex_gdf, title="Hex population"):
+    # Оставляем только гексагоны с ненулевым населением
+    hex_gdf = hex_gdf.copy()
+    hex_gdf = hex_gdf[hex_gdf["population"] > 0]
+    if hex_gdf.empty:
+        print("Нет гексагонов с населением > 0")
+        return
+
+    pop = hex_gdf["population"]
+    pop_max = pop.max()
+    pop_min = pop.min()
+
+    # Логарифмическая шкала в диапазоне [1, pop_max]
+    norm = mpl.colors.LogNorm(vmin=1, vmax=pop_max)
+    cmap = plt.get_cmap("RdYlGn")
+
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    hex_gdf.plot(
+        ax=ax,
+        column="population",
+        cmap=cmap,
+        norm=norm,
+        linewidth=0.5,
+        edgecolor="gray",
+        legend=True,
+        legend_kwds={"label": "Население в гексагоне (логарифмическая шкала)"},
+    )
+
+    plt.title(title)
+    plt.xlabel("Долгота")
+    plt.ylabel("Широта")
+    plt.tight_layout()
+    plt.show()
+
+
 def estimate_population(gdf):
     """
     Оценка населения:
@@ -23,24 +60,33 @@ def estimate_population(gdf):
     gdf["area"] = gdf.geometry.area
     gdf = gdf.to_crs(epsg=4326)
 
-    conditions = [
-        gdf["building"].isin(["apartments", "dormitory"]),
-        gdf["building"].isin(["house", "detached", "terrace"]),
-        gdf["building"] == "yes",
-    ]
     gdf["area"] = pd.to_numeric(gdf["area"], errors="coerce")
     gdf["building:levels"] = pd.to_numeric(
         gdf["building:levels"], errors="coerce"
     ).fillna(1)
+    gdf["flats"] = pd.to_numeric(
+        gdf.get("flats", gdf.get("apartments", None)), errors="coerce"
+    )
 
-    choices = [
-        gdf["building:levels"].fillna(1) * gdf["area"] * 0.008,
-        3,
-        3,  # gdf["building:levels"].fillna(1) * gdf["area"] * 0.01,
-    ]
+    population = np.where(
+        ~gdf["flats"].isna(),
+        gdf["flats"] * 2.5,
+        np.select(
+            [
+                gdf["building"].isin(["apartments", "dormitory"]),
+                gdf["building"].isin(["house", "detached", "terrace"]),
+                gdf["building"] == "yes",
+            ],
+            [
+                gdf["building:levels"].fillna(1) * gdf["area"] * 0.015,
+                3,
+                3,  # можно вместо 3 сделать формулу по площади, если нужно
+            ],
+            default=np.nan,
+        ),
+    )
 
-    gdf["population"] = np.select(conditions, choices, default=np.nan)
-    gdf["population"] = pd.to_numeric(gdf["population"], errors="coerce")
+    gdf["population"] = pd.to_numeric(population, errors="coerce")
     valid_gdf = gdf.dropna(subset=["population"])
     stats = (
         valid_gdf.groupby("building")["population"]
@@ -55,38 +101,24 @@ def estimate_population(gdf):
     return valid_gdf
 
 
-# Функция для генерации гексагонов внутри полигона
 def create_hexagons(geoJson, residential_buildings_gdf, cityid, resolution=10):
-    # Преобразуем geoJson в полигоны
     if geoJson["type"] == "MultiPolygon":
-        # Если на входе MultiPolygon, обрабатываем каждый полигон отдельно
         polygons = [Polygon(coords) for coords in geoJson["coordinates"]]
     else:
-        # Если это просто Polygon, то создаем один полигон
         polygons = [Polygon(geoJson["coordinates"][0])]
 
-    # Обрабатываем каждый полигон отдельно
     hex_data = []
     for polygon in polygons:
-        # Получаем географические координаты полигона
         polyline = list(polygon.exterior.coords)
 
-        # Генерация гексагонов
         poly = h3.LatLngPoly(polyline)
         hexagons = list(h3.h3shape_to_cells(poly, res=resolution))
 
-        # Генерация гексагонов для этого полигона
         for hex_id in hexagons:
             boundary = h3.cell_to_boundary(hex_id)
-            boundary_lon_lat = [
-                (lon, lat) for lat, lon in boundary
-            ]  # Меняем на [(lon, lat), ...]
+            boundary_lon_lat = [(lon, lat) for lat, lon in boundary]
             hex_polygon = Polygon(boundary_lon_lat)
             hex_data.append({"id": hex_id, "geometry": hex_polygon})
-
-    engine = create_engine(
-        "postgresql://postgres:chkaf042do@localhost:5432/diplom", client_encoding="utf8"
-    )
 
     def to_lon_lat(polygon: Polygon) -> Polygon:
         """Переставляет координаты с (lat, lon) на (lon, lat) для всех колец"""
@@ -96,7 +128,6 @@ def create_hexagons(geoJson, residential_buildings_gdf, cityid, resolution=10):
         ]
         return Polygon(exterior, interiors)
 
-    # Преобразуем каждый полигон
     polygons_lonlat = [to_lon_lat(polygon) for polygon in polygons]
 
     multipolygon = MultiPolygon(polygons_lonlat)
@@ -115,21 +146,24 @@ def create_hexagons(geoJson, residential_buildings_gdf, cityid, resolution=10):
 
     gdf.to_postgis("city_boundaries", engine, if_exists="append", index=False)
 
-    # Создаем GeoDataFrame с гексагонами
     hex_gdf = gpd.GeoDataFrame(hex_data, crs="EPSG:4326")
+    residential_buildings_gdf = residential_buildings_gdf.to_crs(epsg=3857)
+    residential_buildings_gdf["geometry"] = residential_buildings_gdf[
+        "geometry"
+    ].centroid
+    residential_buildings_gdf = residential_buildings_gdf.to_crs(epsg=4326)
 
     joined = gpd.sjoin(
         residential_buildings_gdf[["population", "geometry"]],
         hex_gdf,
         how="inner",
-        predicate="intersects",
+        predicate="within",
     )
 
     pop_by_hex = joined.groupby("index_right")["population"].sum().reset_index()
     pop_by_hex.columns = ["hex_index", "population"]
     pop_by_hex["population"] = pop_by_hex["population"].round().astype(int)
 
-    # Объединяем с гексагонами
     filtered_hex_gdf = hex_gdf.reset_index().merge(
         pop_by_hex, left_on="index", right_on="hex_index"
     )
@@ -144,13 +178,13 @@ def create_hexagons(geoJson, residential_buildings_gdf, cityid, resolution=10):
         if_exists="append",
         index=False,
     )
+    
+    plot_hexagons_population(filtered_hex_gdf)
 
 
-# Получение данных
 def get_osm_data(area):
     polygon = area.geometry[0]
 
-    # Скачиваем здания
     tags = {
         "building": [
             "apartments",
@@ -161,25 +195,22 @@ def get_osm_data(area):
             "terrace",
             "semidetached_house",
             "bungalow",
-            "yes"
+            "yes",
         ]
     }
     gdf = ox.features_from_polygon(polygon, tags=tags)
 
-    # Убираем здания с признаками non-residential (если есть такие теги)
     unwanted_tags = ["amenity", "tourism", "resort", "man_made", "shop", "leisure"]
     for tag in unwanted_tags:
         if tag in gdf.columns:
             gdf = gdf[gdf[tag].isna()]
 
-    # Убираем здания без указанных этажей
     condition = ~(
         (gdf["building"] == "yes")
         & (gdf["building:levels"].isna())
         & (gdf["addr:housenumber"].isna())
     )
     gdf_filtered = gdf[condition].copy()
-
 
     exclude_areas_tags = {
         "landuse": [
@@ -189,31 +220,38 @@ def get_osm_data(area):
             "military",
             "cemetery",
             "garages",
-            "park"
+            "park",
         ],
-        "amenity": ["school", "university", "college", "kindergarten", "hospital","parking"],
+        "amenity": [
+            "school",
+            "university",
+            "college",
+            "kindergarten",
+            "hospital",
+            "parking",
+        ],
         "man_made": ["works", "plant"],
         "military": True,
     }
     exclude_areas = ox.features_from_polygon(polygon, exclude_areas_tags)
-    
-    # 3. Приводим к одинаковой проекции
+
     gdf_filtered = gdf_filtered.to_crs("EPSG:3857")
     exclude_areas = exclude_areas.to_crs("EPSG:3857")
 
     gdf_filtered["geometry"] = gdf_filtered.geometry.centroid
 
-    # Пространственное соединение: исключаем здания, попавшие в промзоны
     joined = gpd.sjoin(gdf_filtered, exclude_areas, how="left", predicate="within")
-    if "index_right" in joined.columns:
-        filtered = joined[joined["index_right"].isna()].copy()
+
+    if "id_right" in joined.columns:
+        filtered = joined[joined["id_right"].isna()].copy()
     else:
         filtered = joined.copy()
-    # Вернем исходные геометрии зданий, которые прошли фильтрацию
     result = gdf.loc[filtered.index].copy()
     return result
 
-
+engine = create_engine(
+        "postgresql://postgres:chkaf042do@localhost:5432/diplom", client_encoding="utf8"
+    )
 conn = psycopg2.connect(**db_params)
 cursor = conn.cursor()
 cursor.execute("select osm_name,population,id from city")

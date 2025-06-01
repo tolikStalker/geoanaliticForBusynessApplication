@@ -20,27 +20,14 @@ export function UserProvider({ children }) {
 			if (response.ok) {
 				const data = await response.json();
 				if (data?.username) {
-					// console.log(
-					// 	"UserContext: User authenticated -",
-					// 	data.username
-					// );
 					setUserState(data.username); 
 				} else {
-					// console.log(
-					// 	"UserContext: /api/me returned OK but no username."
-					// );
 					setUserState(null); 
 				}
 			} else {
-				// console.log(
-				// 	"UserContext: User not authenticated (status code: " +
-				// 		response.status +
-				// 		")"
-				// );
 				setUserState(null);
 			}
-		} catch (error) {
-			// console.error("UserContext: Error fetching /api/me -", error);
+		} catch {
 			setUserState(null); 
 		} finally {
 			setAuthChecked(true);
@@ -56,7 +43,6 @@ export function UserProvider({ children }) {
 		setUserState(userData);
 		setAuthChecked(true); 
 		setLoading(false);
-		// console.log("UserContext: User explicitly set to -", userData);
 	}, []);
 
 	const contextValue = {

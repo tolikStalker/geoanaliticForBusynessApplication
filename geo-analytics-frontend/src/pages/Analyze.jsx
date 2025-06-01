@@ -3,19 +3,19 @@ import Map from "@/components/Map";
 import ZoneList from "@/components/ZoneList";
 import { validateFilters, formatNumber } from "@/utils/filters";
 import { useLocation } from "react-router-dom";
-import axios from "axios";
 import {
 	BuildingStorefrontIcon,
 	CurrencyDollarIcon,
 	UserGroupIcon,
 	MapIcon,
 } from "@heroicons/react/24/outline";
+import SessionRedirect from "@/hooks/SessionRedirect"
 
 const MIN_RADIUS = 0.5;
 const DEFAULT_RADIUS = 0.5;
 const DEFAULT_COMPETITORS = 5;
 const DEFAULT_AREA_COUNT = 5;
-const MAX_RADIUS = 5;
+const MAX_RADIUS = 2;
 const MIN_COMPETITORS = 0;
 const MAX_COMPETITORS = 10;
 const MIN_AREA_COUNT = 1;
@@ -24,14 +24,17 @@ const MIN_RENT = 10000;
 const MAX_RENT = 100000000;
 
 export default function Analyze() {
+	const axios = SessionRedirect();
+
 	const location = useLocation();
 	const circleRefs = useRef({});
 
-	const rentPlaceholder = 10000;
+	const rentPlaceholder = 100000;
 	const [validationError, setValidationError] = useState(null);
 	const formattedPlaceholder = formatNumber(rentPlaceholder);
 	const [loading, setLoading] = useState(false);
-	const [loadingInitialData, setLoadingInitialData] = useState(true); // Отдельное состояние для загрузки справочников
+	const [markersReady, setMarkersReady] = useState(true);
+	const [loadingInitialData, setLoadingInitialData] = useState(true); 
 	const [cities, setCities] = useState([]);
 	const [categories, setCategories] = useState([]);
 	const [analysisResult, setAnalysisResult] = useState(null);
@@ -47,8 +50,8 @@ export default function Analyze() {
 	const [visibleLayers, setVisibleLayers] = useState({
 		rent: true,
 		competitors: true,
-		population: true, // Hex grid
-		zones: true, // Analysis result circles/locations
+		population: true, 
+		zones: true, 
 	});
 
 	const autoAnalysisTriggered = useRef(false);
@@ -62,6 +65,7 @@ export default function Analyze() {
 		}
 		setValidationError(null);
 		setAnalysisResult(null);
+		setMarkersReady(false); 
 		setLoading(true);
 		axios
 			.get("http://localhost:5000/api/analysis", {
@@ -76,14 +80,14 @@ export default function Analyze() {
 				withCredentials: true,
 			})
 			.then((response) => {
-				setAnalysisResult(response.data); // Сохранение результатов анализа
+				setAnalysisResult(response.data); 
 				console.log(response.data);
 			})
 			.catch((error) => {
 				console.error("Ошибка при запросе анализа ", error);
 				setValidationError(
 					error.response?.data?.errors
-						? Object.values(error.response.data.errors).join(" ") // Show specific validation errors from backend if available
+						? Object.values(error.response.data.errors).join(" ") 
 						: error.response?.data?.message ||
 								"Произошла ошибка при анализе."
 				);
@@ -91,19 +95,19 @@ export default function Analyze() {
 			.finally(() => {
 				setLoading(false);
 			});
-	}, [filters, rentPlaceholder]);
+	}, [axios, filters]);
 
 	useEffect(() => {
-		setLoadingInitialData(true); // Начинаем загрузку справочников
-		autoAnalysisTriggered.current = false; // Сбрасываем флаг при изменении URL
+		setLoadingInitialData(true);
+		autoAnalysisTriggered.current = false;
 		const params = new URLSearchParams(location.search);
 
 		const urlCityId = params.get("city_id");
-		const urlCategoryId = params.get("category_id"); // Исправлено с category на category_id
+		const urlCategoryId = params.get("category_id"); 
 		const urlRadius = params.get("radius");
 		const urlRent = params.get("rent");
 		const urlCompetitors = params.get("max_competitors");
-		const urlAreaCount = params.get("area_count"); // В URL было areaCount, не area_count
+		const urlAreaCount = params.get("area_count"); 
 		Promise.all([
 			axios.get("http://localhost:5000/api/cities", {
 				withCredentials: true,
@@ -165,7 +169,7 @@ export default function Analyze() {
 			.finally(() => {
 				setLoadingInitialData(false); 
 			});
-	}, [location.search]);
+	}, [axios, location.search]);
 
 	useEffect(() => {
 		const params = new URLSearchParams(location.search);
@@ -180,7 +184,7 @@ export default function Analyze() {
 			String(filters.categoryId) === params.get("category_id") &&
 			!autoAnalysisTriggered.current
 		) {
-			autoAnalysisTriggered.current = true; // Устанавливаем флаг ПЕРЕД вызовом
+			autoAnalysisTriggered.current = true; 
 			handleAnalyze();
 		}
 	}, [filters, handleAnalyze, loadingInitialData, location.search]);
@@ -436,6 +440,7 @@ export default function Analyze() {
 					analysisResult={analysisResult}
 					visibleLayers={visibleLayers}
 					circleRefs={circleRefs}
+					onMarkersReady={()=>setMarkersReady(true)}
 				/>
 				{/* Переключение слоев */}
 				{analysisResult && !loading && (
@@ -475,7 +480,7 @@ export default function Analyze() {
 				)}
 
 				{/* Лоадер */}
-				{(loading || loadingInitialData) && (
+				{(loading || loadingInitialData || !markersReady) && (
 					<div className="z-400 absolute inset-0 bg-black/50 flex items-center justify-center">
 						<div className="text-center text-white">
 							<div

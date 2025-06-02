@@ -9,7 +9,7 @@ import {
 	UserGroupIcon,
 	MapIcon,
 } from "@heroicons/react/24/outline";
-import SessionRedirect from "@/hooks/SessionRedirect"
+import { useAxios } from "../components/AxiosContext";
 
 const MIN_RADIUS = 0.5;
 const DEFAULT_RADIUS = 0.5;
@@ -24,8 +24,7 @@ const MIN_RENT = 10000;
 const MAX_RENT = 100000000;
 
 export default function Analyze() {
-	const axios = SessionRedirect();
-
+	const axios = useAxios();
 	const location = useLocation();
 	const circleRefs = useRef({});
 
@@ -34,7 +33,7 @@ export default function Analyze() {
 	const formattedPlaceholder = formatNumber(rentPlaceholder);
 	const [loading, setLoading] = useState(false);
 	const [markersReady, setMarkersReady] = useState(true);
-	const [loadingInitialData, setLoadingInitialData] = useState(true); 
+	const [loadingInitialData, setLoadingInitialData] = useState(true);
 	const [cities, setCities] = useState([]);
 	const [categories, setCategories] = useState([]);
 	const [analysisResult, setAnalysisResult] = useState(null);
@@ -50,8 +49,8 @@ export default function Analyze() {
 	const [visibleLayers, setVisibleLayers] = useState({
 		rent: true,
 		competitors: true,
-		population: true, 
-		zones: true, 
+		population: true,
+		zones: true,
 	});
 
 	const autoAnalysisTriggered = useRef(false);
@@ -65,7 +64,7 @@ export default function Analyze() {
 		}
 		setValidationError(null);
 		setAnalysisResult(null);
-		setMarkersReady(false); 
+		setMarkersReady(false);
 		setLoading(true);
 		axios
 			.get("http://localhost:5000/api/analysis", {
@@ -80,14 +79,14 @@ export default function Analyze() {
 				withCredentials: true,
 			})
 			.then((response) => {
-				setAnalysisResult(response.data); 
+				setAnalysisResult(response.data);
 				console.log(response.data);
 			})
 			.catch((error) => {
 				console.error("Ошибка при запросе анализа ", error);
 				setValidationError(
 					error.response?.data?.errors
-						? Object.values(error.response.data.errors).join(" ") 
+						? Object.values(error.response.data.errors).join(" ")
 						: error.response?.data?.message ||
 								"Произошла ошибка при анализе."
 				);
@@ -103,11 +102,11 @@ export default function Analyze() {
 		const params = new URLSearchParams(location.search);
 
 		const urlCityId = params.get("city_id");
-		const urlCategoryId = params.get("category_id"); 
+		const urlCategoryId = params.get("category_id");
 		const urlRadius = params.get("radius");
 		const urlRent = params.get("rent");
 		const urlCompetitors = params.get("max_competitors");
-		const urlAreaCount = params.get("area_count"); 
+		const urlAreaCount = params.get("area_count");
 		Promise.all([
 			axios.get("http://localhost:5000/api/cities", {
 				withCredentials: true,
@@ -120,35 +119,36 @@ export default function Analyze() {
 				const fetchedCities = citiesResponse.data;
 				const fetchedCategories = categoriesResponse.data;
 
+				const newFilters = {
+					city: urlCityId
+						? Number(urlCityId)
+						: fetchedCities[0]?.id ?? null,
+					categoryId: urlCategoryId
+						? Number(urlCategoryId)
+						: fetchedCategories[0]?.id ?? null,
+					radius: urlRadius ? parseFloat(urlRadius) : DEFAULT_RADIUS,
+					rent: urlRent ?? "",
+					competitors: urlCompetitors
+						? parseInt(urlCompetitors, 10)
+						: DEFAULT_COMPETITORS,
+					areaCount: urlAreaCount
+						? parseInt(urlAreaCount, 10)
+						: DEFAULT_AREA_COUNT,
+				};
+
 				setCities(fetchedCities);
 				setCategories(fetchedCategories);
 
-				setFilters(() => {
-					const city = urlCityId
-						? Number(urlCityId)
-						: fetchedCities[0]?.id ?? null;
-					const categoryId = urlCategoryId
-						? Number(urlCategoryId)
-						: fetchedCategories[0]?.id ?? null;
-					const radius = urlRadius
-						? parseFloat(urlRadius)
-						: DEFAULT_RADIUS;
-					const rent = urlRent ?? "";
-					const competitors = urlCompetitors
-						? parseInt(urlCompetitors, 10)
-						: DEFAULT_COMPETITORS;
-					const areaCount = urlAreaCount
-						? parseInt(urlAreaCount, 10)
-						: DEFAULT_AREA_COUNT;
+				setFilters((prev) => {
+					const isSame =
+						prev.city === newFilters.city &&
+						prev.categoryId === newFilters.categoryId &&
+						prev.radius === newFilters.radius &&
+						prev.rent === newFilters.rent &&
+						prev.competitors === newFilters.competitors &&
+						prev.areaCount === newFilters.areaCount;
 
-					return {
-						city,
-						categoryId,
-						radius,
-						rent,
-						competitors,
-						areaCount,
-					};
+					return isSame ? prev : newFilters;
 				});
 			})
 			.catch((error) => {
@@ -167,7 +167,7 @@ export default function Analyze() {
 				});
 			})
 			.finally(() => {
-				setLoadingInitialData(false); 
+				setLoadingInitialData(false);
 			});
 	}, [axios, location.search]);
 
@@ -184,7 +184,7 @@ export default function Analyze() {
 			String(filters.categoryId) === params.get("category_id") &&
 			!autoAnalysisTriggered.current
 		) {
-			autoAnalysisTriggered.current = true; 
+			autoAnalysisTriggered.current = true;
 			handleAnalyze();
 		}
 	}, [filters, handleAnalyze, loadingInitialData, location.search]);
@@ -440,7 +440,7 @@ export default function Analyze() {
 					analysisResult={analysisResult}
 					visibleLayers={visibleLayers}
 					circleRefs={circleRefs}
-					onMarkersReady={()=>setMarkersReady(true)}
+					onMarkersReady={() => setMarkersReady(true)}
 				/>
 				{/* Переключение слоев */}
 				{analysisResult && !loading && (

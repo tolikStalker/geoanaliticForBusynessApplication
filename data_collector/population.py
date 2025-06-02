@@ -3,7 +3,7 @@ import osmnx as ox
 import numpy as np
 import pandas as pd
 import psycopg2
-from config import db_params
+from config import db_params, sqlalchemy_url
 import h3
 from shapely.geometry import Polygon
 import json
@@ -178,8 +178,8 @@ def create_hexagons(geoJson, residential_buildings_gdf, cityid, resolution=10):
         if_exists="append",
         index=False,
     )
-    
-    plot_hexagons_population(filtered_hex_gdf)
+
+    # plot_hexagons_population(filtered_hex_gdf)
 
 
 def get_osm_data(area):
@@ -249,9 +249,8 @@ def get_osm_data(area):
     result = gdf.loc[filtered.index].copy()
     return result
 
-engine = create_engine(
-        "postgresql://postgres:chkaf042do@localhost:5432/diplom", client_encoding="utf8"
-    )
+
+engine = create_engine(sqlalchemy_url, client_encoding="utf8")
 conn = psycopg2.connect(**db_params)
 cursor = conn.cursor()
 cursor.execute("select osm_name,population,id from city")

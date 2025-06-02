@@ -25,7 +25,7 @@ from shapely import wkt
 def parse_coordinates(coord_str):
     try:
         lat, lon = map(float, coord_str.split(","))
-        return f"POINT({lat} {lon})"  # важно: сначала X (lon), потом Y (lat)
+        return f"POINT({lat} {lon})" 
     except Exception as exc:
         print(f"Ошибка координат: {coord_str} - {str(exc)}")
         return None
@@ -78,8 +78,6 @@ def parse_snippet(snippet, polygon):
             name,
             float(rating.replace(",", ".")) if rating else None,
             int(re.search(r"\d+", rate_amount).group()) if rate_amount else None,
-            # selectedCategory["id"],
-            # category.lower() if category else None,
             coord,
             address,
             selectedCity["id"],
@@ -130,7 +128,7 @@ conn.close()
 
 options = Options()
 prefs = {"profile.managed_default_content_settings.images": 2}
-options.add_experimental_option("prefs", prefs)  # load without images
+options.add_experimental_option("prefs", prefs) 
 # options.headless = True
 
 service = Service(executable_path="./data_collector/msedgedriver.exe")
@@ -139,8 +137,6 @@ driver = webdriver.Edge(service=service, options=options)
 driver.get("https://yandex.ru/maps/")
 for selectedCity in city:
     print(f"Поиск города {selectedCity['name']}...")
-    # if not search_and_click(selectedCity["name"]):
-    #     print("Ошибка поиска города.")
 
     for selectedCategory in category:
 

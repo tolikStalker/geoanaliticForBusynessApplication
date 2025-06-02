@@ -178,7 +178,7 @@ def get_analysis_history():
         user_history = (
             AnalysisRequest.query.filter_by(user_id=current_user.id)
             .order_by(AnalysisRequest.created_at.desc())
-            .limit(50)
+            .limit(10)
             .all()
         )
 
@@ -450,6 +450,8 @@ def get_competitors(city_id, category_id):
         func.ST_Y(Organization.coordinates).label("lat"),
         func.ST_X(Organization.coordinates).label("lon"),
         Organization.name,
+        Organization.rate,
+        Organization.rate_count,
         Organization.strength.label("strength")
     ).filter(
         Organization.city_id == city_id,
@@ -466,7 +468,9 @@ def get_competitors(city_id, category_id):
                 {
                     "coordinates": [comp_data.lat, comp_data.lon],
                     "name": comp_data.name,
-                    "strength": comp_data.strength
+                    "strength": comp_data.strength,
+                    'rate': comp_data.rate,
+                    'rate_count':comp_data.rate_count
                 }
             )
         except Exception as e:

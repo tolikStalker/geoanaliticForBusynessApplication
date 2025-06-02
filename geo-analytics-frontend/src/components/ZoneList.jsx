@@ -1,6 +1,6 @@
 import { formatNumber } from "../utils/filters";
 
-export default function ZoneList({ zones, circleRefs }) {
+export default function ZoneList({ zones, circleRefs, onZoneClick }) {
 	if (!zones || zones.length === 0) return null;
 
 	return (
@@ -11,22 +11,13 @@ export default function ZoneList({ zones, circleRefs }) {
 			<ul className="space-y-2 max-h-80 overflow-y-auto pr-2">
 				{zones.map((zone, index) => (
 					<li
-						// key={index}
 						className="p-2 border rounded shadow-sm bg-gray-50"
-						// key={zone.id}
-						// onMouseEnter={() => {
-						// 	const circle = circleRefs.current[zone.id];
-						// 	if (circle) circle.setStyle({ color: "red" });
-						// }}
-						// onMouseLeave={() => {
-						// 	const circle = circleRefs.current[zone.id];
-						// 	if (circle) circle.setStyle({ color: "#3388ff" });
-						// }}
+						key={zone.id}
+						onClick={() => onZoneClick?.(zone.id)}
 					>
 						<div>
 							Ранг: <strong>{zone.rank ?? index + 1}</strong>
 						</div>
-						{/* {zone.score && <div>Скор: {zone.popSum.toFixed(2)}</div>} */}
 						{zone.pop_sum && (
 							<div>Население: {formatNumber(zone.pop_sum)}</div>
 						)}

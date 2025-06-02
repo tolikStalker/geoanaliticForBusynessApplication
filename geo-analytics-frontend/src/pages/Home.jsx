@@ -4,26 +4,46 @@ import { useState } from "react";
 const features = [
 	{
 		title: "Анализ конкурентов",
-		text: "Выявление плотности аналогичных бизнесов",
+		text: "Картина конкурентной среды рядом с выбранной локацией",
 		details:
-			"Дополнительно анализируются ближайшие бизнесы, их количество, уровень конкуренции и потенциальная аудитория.",
+			"Система определяет плотность аналогичных бизнесов, их рейтинг, количество отзывов и потенциальную аудиторию. Это позволяет оценить уровень конкуренции и выбрать оптимальное место для открытия нового объекта.",
 	},
-	// {
-	// 	title: "Трафик",
-	// 	text: "Пешеходный и автомобильный поток",
-	// 	details:
-	// 		"Используются данные о загруженности дорог, количестве пешеходов в разное время суток и сезонность трафика.",
-	// },
 	{
 		title: "Экономика",
-		text: "Стоимость аренды и окупаемость",
+		text: "Анализ аренды и расчет окупаемости",
 		details:
-			"Рассчитываются средние цены аренды в регионе, потенциальный доход и сроки окупаемости бизнеса.",
+			"Автоматически рассчитываются средние цены аренды по выбранному району, потенциальный доход и сроки окупаемости инвестиций. Можно подобрать лучшие варианты с точки зрения бюджета и рисков.",
+	},
+	{
+		title: "Плотность населения",
+		text: "Где больше клиентов?",
+		details:
+			"Отображается плотность и структура населения по районам и кварталам, что помогает выбрать наиболее перспективные точки с максимальным потоком потенциальных клиентов.",
+	},
+	{
+		title: "Интерактивная карта",
+		text: "Гибкая визуализация данных",
+		details:
+			"Вся аналитика отображается на современной интерактивной карте: можно управлять слоями — смотреть конкурентов, предложения аренды, демографию, фильтровать и сравнивать локации.",
+	},
+	{
+		title: "Фильтрация и сценарии поиска",
+		text: "Под ваши задачи",
+		details:
+			"Гибкие фильтры позволяют учитывать тип бизнеса, целевой бюджет, радиус поиска, допустимое количество конкурентов и другие параметры для индивидуального анализа.",
+	},
+	{
+		title: "Автоматический сбор и обновление данных",
+		text: "Только актуальная информация",
+		details:
+			"Данные агрегируются из разных источников и регулярно обновляются: вы всегда работаете с актуальной картиной рынка.",
 	},
 ];
 
 export default function Home() {
-	const [expandedStates, setExpandedStates] = useState([false, false, false]);
+	const [expandedStates, setExpandedStates] = useState(
+		features.map(() => false)
+	);
 
 	const handleToggle = (index) => {
 		setExpandedStates((prevStates) =>
@@ -47,7 +67,7 @@ export default function Home() {
 					</Link>
 				</div>
 
-				<div className="grid md:grid-cols-2 gap-8 mb-16 items-start">
+				<div className="grid md:grid-cols-3 gap-8 mb-16 items-start">
 					{features.map((feature, index) => (
 						<FeatureCard
 							key={index}
@@ -68,10 +88,10 @@ const FeatureCard = ({ title, text, details, isExpanded, onToggle }) => {
 	return (
 		<div
 			className={`p-6 bg-white rounded-xl shadow-md 
-        hover:shadow-lg hover:bg-gray-100
-        transition-all duration-300 cursor-pointer min-h-35 hover:transform hover:scale-[1.02] transition-max-height ${
-			isExpanded ? "max-h-[500px]" : "max-h-35"
-		}`}
+		hover:shadow-lg hover:bg-gray-100
+		transition-all duration-300 cursor-pointer min-h-35 
+		hover:transform hover:scale-[1.02]
+		${isExpanded ? "" : "overflow-hidden max-h-[160px]"}`}
 			onClick={onToggle}
 		>
 			<h3 className="text-xl font-semibold mb-2">{title}</h3>

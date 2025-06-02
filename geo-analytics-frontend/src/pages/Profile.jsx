@@ -132,8 +132,8 @@ function HistoryItemCard({ item }) {
 			category_id: item.category_id, // название категории
 			radius: item.radius,
 			rent: item.rent,
-			competitors: item.max_competitors,
-			areaCount: item.area_count,
+			max_competitors: item.max_competitors,
+			area_count: item.area_count,
 		}).toString();
 
 		navigate(`/analyze?${queryParams}`);

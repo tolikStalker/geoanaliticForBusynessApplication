@@ -9,11 +9,19 @@ import re
 CITIES = [
     {"city": "zheleznovodsk", "capital": "stavropol"},
     {"city": "taganrog", "capital": "rostov"},
-    # {"city": "rostov-on-don", "capital": "rostov"},
+    {"city": "rostov-on-don", "capital": "rostov"},
+    # {"city": "stavropol", "capital": "stavropol"},
+    # {"city": "pyatigorsk", "capital": "stavropol"},
+    # {"city": "krasnodar", "capital": "krasnodar"},
 ]
 
 
 def slugify_region(region_name: str) -> str:
+    if not region_name:
+        return "n-a"
+
+    region_name = str(region_name)
+
     custom = region_name.replace("ий", "iy").replace("й", "y").replace("я", "ya")
 
     # Транслитерация (с русского на латиницу)

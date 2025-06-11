@@ -113,7 +113,7 @@ export default function Profile() {
 
 				{!loading && !error && history?.length > 0 && (
 					<div className="space-y-4">
-						{history.map((item) => (
+						{(Array.isArray(history) ? history : []).map((item) => (
 							<HistoryItemCard key={item.id} item={item} />
 						))}
 					</div>

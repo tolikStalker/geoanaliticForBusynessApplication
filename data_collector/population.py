@@ -70,7 +70,7 @@ def estimate_population(gdf):
 
     population = np.where(
         ~gdf["flats"].isna(),
-        gdf["flats"] * 2.5,
+        gdf["flats"] * 2.2,
         np.select(
             [
                 gdf["building"].isin(["apartments", "dormitory"]),
@@ -121,7 +121,7 @@ def create_hexagons(geoJson, residential_buildings_gdf, cityid, resolution=10):
             hex_data.append({"id": hex_id, "geometry": hex_polygon})
 
     def to_lon_lat(polygon: Polygon) -> Polygon:
-        """Переставляет координаты с (lat, lon) на (lon, lat) для всех колец"""
+        """Переставляем координаты с (lat, lon) на (lon, lat) для всех колец"""
         exterior = [(lon, lat) for lat, lon in polygon.exterior.coords]
         interiors = [
             [(lon, lat) for lat, lon in ring.coords] for ring in polygon.interiors

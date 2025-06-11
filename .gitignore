@@ -10,7 +10,6 @@ __pycache__/
 **/config.json
 /cache
 /geo-analytics-frontend/node_modules
-**/*.config.js
 **/.env
 npm-debug.log*
 yarn-debug.log*

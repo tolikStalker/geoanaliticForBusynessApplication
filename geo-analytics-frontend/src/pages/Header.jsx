@@ -10,7 +10,7 @@ export default function Header() {
 	const handleLogout = async () => {
 		fetch("http://localhost:5000/logout", {
 			method: "POST",
-			credentials: "include",
+			withCredentials: true,
 		})
 			.then(() => {
 				setUser(null);

@@ -11,7 +11,7 @@ export function UserProvider({ children }) {
 		setAuthChecked(false);
 		try {
 			const response = await fetch("http://localhost:5000/me", {
-				credentials: "include", 
+				withCredentials: true,
 				headers: {
 					"Accept": "application/json"
 				}

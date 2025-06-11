@@ -3,7 +3,7 @@ import os
 import getpass
 from pathlib import Path
 import subprocess
-
+import sys
 
 def setup_linux_cron():
     cron_jobs = [
@@ -89,21 +89,18 @@ def setup_windows_tasks():
 def run_scripts_immediately():
     username = getpass.getuser()
 
+    base_dir=os.path.dirname(os.path.abspath(__file__))
+
     scripts = [
-        rf"C:\Users\{username}\PycharmProjects\dipl\data_collector\city.py",
-        rf"C:\Users\{username}\PycharmProjects\dipl\data_collector\cian_parse.py",
-        rf"C:\Users\{username}\PycharmProjects\dipl\data_collector\organization_parse.py",
-        rf"C:\Users\{username}\PycharmProjects\dipl\data_collector\population.py",
+        os.path.join(base_dir,os.path.pardir,'data_collector','city.py'),
+        os.path.join(base_dir,os.path.pardir,'data_collector','cian_parse.py'),
+        os.path.join(base_dir,os.path.pardir,'data_collector','population.py'),
+        os.path.join(base_dir,os.path.pardir,'data_collector','organization_parse.py')
     ]
 
     for script in scripts:
         print(f"[*] Запуск скрипта {script}...")
-        if platform.system() == "Windows":
-            python_exe = Path(rf"C:\Users\{username}\PycharmProjects\dipl\.venv\Scripts\python.exe")
-            subprocess.run([str(python_exe), script])
-        else:
-            python_exe = Path.home() / "PycharmProjects/dipl/.venv/bin/python"
-            subprocess.run([python_exe, script])
+        subprocess.run([sys.executable, script])
 
 
 system = platform.system()

@@ -8,6 +8,8 @@ def check_db_connection():
     with app.app_context():
         try:
             db.session.execute(text("SELECT 1"))
+            db.session.execute(text("SELECT * from users"))
+
             print("Подключение к базе данных успешно.")
         except Exception as e:
             print(f"Ошибка подключения к базе данных: {str(e)}")

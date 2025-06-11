@@ -10,9 +10,6 @@ CITIES = [
     {"city": "zheleznovodsk", "capital": "stavropol"},
     {"city": "taganrog", "capital": "rostov"},
     {"city": "rostov-on-don", "capital": "rostov"},
-    # {"city": "stavropol", "capital": "stavropol"},
-    # {"city": "pyatigorsk", "capital": "stavropol"},
-    # {"city": "krasnodar", "capital": "krasnodar"},
 ]
 
 

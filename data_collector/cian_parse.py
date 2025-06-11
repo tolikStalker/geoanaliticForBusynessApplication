@@ -61,7 +61,7 @@ for ci in city:
 
     try:
         while True:
-            wait = WebDriverWait(driver, 10)  # Wait up to 10 seconds
+            wait = WebDriverWait(driver, 10)  # ждем 10 сек
 
             cian_config_value = None
             for _ in range(10):  # Попытки в течение 10 секунд

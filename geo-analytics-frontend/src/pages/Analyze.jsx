@@ -37,6 +37,11 @@ export default function Analyze() {
 	const [cities, setCities] = useState([]);
 	const [categories, setCategories] = useState([]);
 	const [analysisResult, setAnalysisResult] = useState(null);
+	const [sidebarOpen, setSidebarOpen] = useState(false);
+	const [mapView, setMapView] = useState({
+		center: selectedCity ? selectedCity.center : [55.7558, 37.6173],
+		zoom: 12,
+	});
 	const [filters, setFilters] = useState({
 		city: null,
 		categoryId: null,
@@ -224,223 +229,138 @@ export default function Analyze() {
 				console.warn(`toggleLayer: Invalid layer key "${layerKey}"`);
 		}
 	};
+	
+
+	// Блокировать прокрутку body при открытом сайдбаре на мобилке
+	useEffect(() => {
+		if (sidebarOpen) {
+			document.body.style.overflow = "hidden";
+		} else {
+			document.body.style.overflow = "";
+		}
+	}, [sidebarOpen]);
+
+	const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 768);
+
+	useEffect(() => {
+		const onResize = () => setIsDesktop(window.innerWidth >= 768);
+		window.addEventListener("resize", onResize);
+		return () => window.removeEventListener("resize", onResize);
+	}, []);
+
+	const mapInstance = useRef(null);
+
+	useEffect(() => {
+		if (mapInstance.current) {
+			setTimeout(() => mapInstance.current.invalidateSize(), 350);
+		}
+	}, [sidebarOpen]);
+
+	useEffect(() => {
+		if (selectedCity) {
+			setMapView((prev) => ({
+				...prev,
+				center: selectedCity.center,
+			}));
+		}
+	}, [selectedCity]);
 
 	return (
-		<div className="h-screen flex">
-			{/* Sidebar */}
-			<div className="w-100 bg-white shadow-xl p-4 flex flex-col overflow-y-auto">
-				<fieldset
-					className="space-y-4"
-					disabled={loading || loadingInitialData}
-				>
-					<legend className="text-xl font-bold mb-4">
-						Параметры анализа
-					</legend>
-					<div>
-						<label className="block text-sm font-medium mb-1">
-							Город
-						</label>
-						<select
-							value={filters.city || ""}
-							name="city"
-							onChange={(e) => {
-								const cityId = e.target.value
-									? Number(e.target.value)
-									: null;
-								handleFilterChange("city", parseInt(cityId));
-							}}
-							className="input-field"
-						>
-							<option value="" disabled>
-								-- Выберите город --
-							</option>
-							{cities.map((city) => (
-								<option key={city.id} value={city.id}>
-									{city.name}
-								</option>
-							))}
-						</select>
-					</div>
+		<div className="h-screen flex flex-col md:flex-row relative">
+			{isDesktop && (
+				<div className="static md:w-100 h-full">
+					<SidebarContent
+						{...{
+							setSidebarOpen,
+							isMobile: false,
+							filters,
+							handleFilterChange,
+							cities,
+							categories,
+							loading,
+							loadingInitialData,
+							handleAnalyze,
+							validationError,
+							analysisResult,
+							formatNumber,
+							formattedPlaceholder,
+							circleRefs,
+						}}
+					/>
+				</div>
+			)}
 
-					<div>
-						<label className="block text-sm font-medium mb-1">
-							Категория бизнеса
-						</label>
-						<select
-							value={filters.categoryId || ""}
-							name="category"
-							onChange={(e) => {
-								const categoryId = e.target.value
-									? Number(e.target.value)
-									: null;
-								handleFilterChange(
-									"categoryId",
-									parseInt(categoryId)
-								);
-							}}
-							className="input-field"
-						>
-							<option value="" disabled>
-								-- Выберите категорию --
-							</option>
-							{categories.map((category) => (
-								<option key={category.id} value={category.id}>
-									{category.name.charAt(0).toUpperCase() +
-										category.name.slice(1)}
-								</option>
-							))}
-						</select>
-					</div>
-
-					<div>
-						<label className="block text-sm font-medium mb-1">
-							Радиус анализа (км): {filters.radius}
-						</label>
-						<input
-							type="range"
-							name="radius"
-							min={MIN_RADIUS}
-							max={MAX_RADIUS}
-							step="0.1"
-							value={filters.radius}
-							onChange={(e) =>
-								handleFilterChange("radius", e.target.value)
-							}
-							className="w-full"
-						/>
-					</div>
-
-					<div>
-						<label className="block text-sm font-medium mb-1">
-							Максимальное количество конкурентов:{" "}
-							{filters.competitors}
-						</label>
-						<input
-							type="range"
-							name="competitors"
-							min={MIN_COMPETITORS}
-							max={MAX_COMPETITORS}
-							step="1"
-							value={filters.competitors}
-							onChange={(e) =>
-								handleFilterChange(
-									"competitors",
-									e.target.value
-								)
-							}
-							className="w-full"
-						/>
-					</div>
-
-					<div>
-						<label className="block text-sm font-medium mb-1">
-							Количество зон ранжирования: {filters.areaCount}
-						</label>
-						<input
-							type="range"
-							name="area"
-							min={MIN_AREA_COUNT}
-							max={MAX_AREA_COUNT}
-							step="1"
-							value={filters.areaCount}
-							onChange={(e) =>
-								handleFilterChange("areaCount", e.target.value)
-							}
-							className="w-full"
-						/>
-					</div>
-
-					<div>
-						<label className="block text-sm font-medium mb-1">
-							Стоимость аренды помещения (₽):
-						</label>
-						<input
-							type="text"
-							name="rent"
-							value={formatNumber(filters.rent)}
-							onChange={(e) =>
-								handleFilterChange(
-									"rent",
-									e.target.value.replace(/\D/g, "")
-								)
-							}
-							className="input-field"
-							placeholder={formattedPlaceholder}
-							inputMode="numeric"
-							pattern="\d+"
-							maxLength="20"
-						/>
-					</div>
-
+			<div className="relative h-screen w-screen">
+				{!isDesktop && !sidebarOpen && (
 					<button
-						onClick={handleAnalyze}
-						className="btn-primary-lg w-full"
-						disabled={loading}
+						className="absolute top-4 left-4 z-[500] bg-white p-2 rounded shadow-lg"
+						onClick={() => setSidebarOpen(true)}
+						aria-label="Открыть параметры"
 						type="button"
 					>
-						{loading ? "Анализ..." : "Запустить анализ"}
+						<svg
+							width="32"
+							height="32"
+							fill="none"
+							viewBox="0 0 24 24"
+						>
+							<rect
+								y="4"
+								width="24"
+								height="2"
+								rx="1"
+								fill="#222"
+							/>
+							<rect
+								y="11"
+								width="24"
+								height="2"
+								rx="1"
+								fill="#222"
+							/>
+							<rect
+								y="18"
+								width="24"
+								height="2"
+								rx="1"
+								fill="#222"
+							/>
+						</svg>
 					</button>
-
-					{validationError && (
-						<div className="my-2 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm whitespace-pre-line">
-							{validationError}
-						</div>
-					)}
-					{!analysisResult && !loading && !validationError && (
-						<div className="mt-auto pt-4 text-center text-gray-500 text-sm">
-							Задайте параметры и запустите анализ.
-						</div>
-					)}
-				</fieldset>
-
-				{analysisResult && !loading && (
-					<div className="mt-2 pt-4 border-t">
-						<h4 className="font-semibold mb-2">Результаты:</h4>
-						<StatItem
-							label="Организации"
-							value={analysisResult.competitors?.length ?? 0}
-						/>
-						<StatItem
-							label="Население"
-							value={`${formatNumber(
-								analysisResult.hexs?.total ?? 0
-							)} чел.`}
-						/>
-						<StatItem
-							label="Количество подходящих помещений"
-							value={analysisResult.rent_places?.length ?? 0}
-						/>
-						{analysisResult?.avg_rent != null && (
-							<StatItem
-								label="Средняя аренда"
-								value={`${analysisResult?.avg_rent} ₽`}
-							/>
-						)}
-						{analysisResult?.avg_for_square != null && (
-							<StatItem
-								label="Средняя стоимость за 1 м²"
-								value={`${analysisResult?.avg_for_square} ₽/м²`}
-							/>
-						)}
-						<ZoneList
-							zones={analysisResult?.locations}
-							circleRefs={circleRefs}
+				)}
+				{/* Sidebar */}
+				{!isDesktop && sidebarOpen && (
+					<div className="inset-0 z-[500] w-screen h-screen bg-white flex flex-col">
+						<SidebarContent
+							{...{
+								setSidebarOpen,
+								isMobile: true,
+								filters,
+								handleFilterChange,
+								cities,
+								categories,
+								loading,
+								loadingInitialData,
+								handleAnalyze,
+								validationError,
+								analysisResult,
+								formatNumber,
+								formattedPlaceholder,
+								circleRefs,
+							}}
 						/>
 					</div>
 				)}
-			</div>
 
-			{/* Карта */}
-			<div className="flex-1 relative">
 				<Map
-					center={
-						selectedCity ? selectedCity.center : [55.7558, 37.6173]
-					}
-					zoom={12}
+					ref={mapInstance}
+					center={mapView.center}
+					zoom={mapView.zoom}
 					analysisResult={analysisResult}
 					visibleLayers={visibleLayers}
 					circleRefs={circleRefs}
 					onMarkersReady={() => setMarkersReady(true)}
+					onUserMove={(center, zoom) => setMapView({ center, zoom })}
 				/>
 				{/* Переключение слоев */}
 				{analysisResult && !loading && (
@@ -478,7 +398,6 @@ export default function Analyze() {
 						/>
 					</div>
 				)}
-
 				{/* Лоадер */}
 				{(loading || loadingInitialData || !markersReady) && (
 					<div className="z-400 absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -496,6 +415,244 @@ export default function Analyze() {
 					</div>
 				)}
 			</div>
+		</div>
+	);
+}
+
+function SidebarContent({
+	setSidebarOpen,
+	isMobile,
+	filters,
+	handleFilterChange,
+	cities,
+	categories,
+	loading,
+	loadingInitialData,
+	handleAnalyze,
+	validationError,
+	analysisResult,
+	formatNumber,
+	formattedPlaceholder,
+	circleRefs,
+}) {
+	return (
+		<div
+			className={`relative bg-white shadow-xl p-4 h-full flex flex-col overflow-y-auto ${
+				isMobile ? "w-full" : ""
+			}`}
+		>
+			{isMobile && (
+				<button
+					className="absolute top-4 right-4 z-50 p-1 rounded hover:bg-gray-200"
+					onClick={() => setSidebarOpen(false)}
+					aria-label="Закрыть параметры"
+					type="button"
+				>
+					<svg width="28" height="28" fill="none" viewBox="0 0 24 24">
+						<path
+							stroke="#222"
+							strokeWidth="2"
+							strokeLinecap="round"
+							d="M6 6l12 12M6 18L18 6"
+						/>
+					</svg>
+				</button>
+			)}
+			<fieldset
+				className="space-y-4"
+				disabled={loading || loadingInitialData}
+			>
+				<legend className="text-xl font-bold mb-4">
+					Параметры анализа
+				</legend>
+				<div>
+					<label className="block text-sm font-medium mb-1">
+						Город
+					</label>
+					<select
+						value={filters.city || ""}
+						name="city"
+						onChange={(e) => {
+							const cityId = e.target.value
+								? Number(e.target.value)
+								: null;
+							handleFilterChange("city", parseInt(cityId));
+						}}
+						className="input-field"
+					>
+						<option value="" disabled>
+							-- Выберите город --
+						</option>
+						{cities.map((city) => (
+							<option key={city.id} value={city.id}>
+								{city.name}
+							</option>
+						))}
+					</select>
+				</div>
+
+				<div>
+					<label className="block text-sm font-medium mb-1">
+						Категория бизнеса
+					</label>
+					<select
+						value={filters.categoryId || ""}
+						name="category"
+						onChange={(e) => {
+							const categoryId = e.target.value
+								? Number(e.target.value)
+								: null;
+							handleFilterChange(
+								"categoryId",
+								parseInt(categoryId)
+							);
+						}}
+						className="input-field"
+					>
+						<option value="" disabled>
+							-- Выберите категорию --
+						</option>
+						{categories.map((category) => (
+							<option key={category.id} value={category.id}>
+								{category.name.charAt(0).toUpperCase() +
+									category.name.slice(1)}
+							</option>
+						))}
+					</select>
+				</div>
+
+				<div>
+					<label className="block text-sm font-medium mb-1">
+						Радиус анализа (км): {filters.radius}
+					</label>
+					<input
+						type="range"
+						name="radius"
+						min={MIN_RADIUS}
+						max={MAX_RADIUS}
+						step="0.1"
+						value={filters.radius}
+						onChange={(e) =>
+							handleFilterChange("radius", e.target.value)
+						}
+						className="w-full"
+					/>
+				</div>
+
+				<div>
+					<label className="block text-sm font-medium mb-1">
+						Максимальное количество конкурентов:{" "}
+						{filters.competitors}
+					</label>
+					<input
+						type="range"
+						name="competitors"
+						min={MIN_COMPETITORS}
+						max={MAX_COMPETITORS}
+						step="1"
+						value={filters.competitors}
+						onChange={(e) =>
+							handleFilterChange("competitors", e.target.value)
+						}
+						className="w-full"
+					/>
+				</div>
+
+				<div>
+					<label className="block text-sm font-medium mb-1">
+						Количество зон ранжирования: {filters.areaCount}
+					</label>
+					<input
+						type="range"
+						name="area"
+						min={MIN_AREA_COUNT}
+						max={MAX_AREA_COUNT}
+						step="1"
+						value={filters.areaCount}
+						onChange={(e) =>
+							handleFilterChange("areaCount", e.target.value)
+						}
+						className="w-full"
+					/>
+				</div>
+
+				<div>
+					<label className="block text-sm font-medium mb-1">
+						Стоимость аренды помещения (₽):
+					</label>
+					<input
+						type="text"
+						name="rent"
+						value={formatNumber(filters.rent)}
+						onChange={(e) =>
+							handleFilterChange(
+								"rent",
+								e.target.value.replace(/\D/g, "")
+							)
+						}
+						className="input-field"
+						placeholder={formattedPlaceholder}
+						inputMode="numeric"
+						pattern="\d+"
+						maxLength="20"
+					/>
+				</div>
+
+				<button
+					onClick={handleAnalyze}
+					className="btn-primary-lg w-full"
+					disabled={loading}
+					type="button"
+				>
+					{loading ? "Анализ..." : "Запустить анализ"}
+				</button>
+
+				{validationError && (
+					<div className="my-2 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm whitespace-pre-line">
+						{validationError}
+					</div>
+				)}
+				{!analysisResult && !loading && !validationError && (
+					<div className="mt-auto pt-4 text-center text-gray-500 text-sm">
+						Задайте параметры и запустите анализ.
+					</div>
+				)}
+			</fieldset>
+			{analysisResult && !loading && (
+				<div className="mt-2 pt-4 border-t">
+					<h4 className="font-semibold mb-2">Результаты:</h4>
+					<StatItem
+						label="Организации"
+						value={analysisResult.competitors?.length ?? 0}
+					/>
+					<StatItem
+						label="Население"
+						value={`${formatNumber(
+							analysisResult.hexs?.total ?? 0
+						)} чел.`}
+					/>
+					<StatItem
+						label="Количество подходящих помещений"
+						value={analysisResult.rent_places?.length ?? 0}
+					/>
+					{analysisResult?.avg_rent != null && (
+						<StatItem
+							label="Средняя аренда"
+							value={`${analysisResult?.avg_rent} ₽`}
+						/>
+					)}
+					{analysisResult?.avg_for_square != null && (
+						<StatItem
+							label="Средняя стоимость за 1 м²"
+							value={`${analysisResult?.avg_for_square} ₽/м²`}
+						/>
+					)}
+					<ZoneList
+						zones={analysisResult?.locations}
+						circleRefs={circleRefs}
+					/>
+				</div>
+			)}
 		</div>
 	);
 }

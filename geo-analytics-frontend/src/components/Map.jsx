@@ -1,4 +1,10 @@
-import { useRef, useEffect, useCallback } from "react";
+import {
+	useRef,
+	useEffect,
+	useCallback,
+	forwardRef,
+	useImperativeHandle,
+} from "react";
 import L from "leaflet";
 import { scaleLog } from "d3-scale";
 import { interpolateRdYlGn } from "d3-scale-chromatic";
@@ -47,23 +53,79 @@ const onEachPopulationHex = (feature, layer) => {
 
 function getHexColor(pop, popMax) {
 	if (!pop || pop <= 0 || !popMax || popMax <= 0) return "#f7fcb9";
-
 	const scale = scaleLog().domain([1, popMax]).range([0, 1]).clamp(true);
-
 	return interpolateRdYlGn(scale(pop));
 }
 
-export default function Map({
-	center,
-	zoom,
-	analysisResult,
-	visibleLayers,
-	circleRefs,
-	onMarkersReady,
-}) {
+const Map = forwardRef(function Map(
+	{ center, zoom, analysisResult, visibleLayers, circleRefs, onMarkersReady },
+	ref
+) {
 	const mapRef = useRef(null);
 	const mapInstance = useRef(null);
+	const layerGroups = useRef({
+		bounds: L.geoJSON(null, {
+			style: { color: "red", weight: 2, fillOpacity: 0.1 },
+		}),
+		population: L.geoJSON(null, {
+			style: () => ({}), 
+			onEachFeature: onEachPopulationHex,
+		}),
+		rent: L.layerGroup(),
+		competitors: L.layerGroup(),
+		zones: L.layerGroup(),
+		legend: null,
+	});
 
+	// Поддержка invalidateSize()
+	useImperativeHandle(ref, () => ({
+		invalidateSize: () => {
+			if (mapInstance.current) mapInstance.current.invalidateSize();
+		},
+	}));
+
+	// 1. Создаём карту только один раз!
+	useEffect(() => {
+		if (!mapInstance.current && mapRef.current) {
+			mapInstance.current = L.map(mapRef.current, {
+				center: center,
+				zoom: zoom,
+				zoomControl: false,
+			});
+			L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+				attribution:
+					'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+			}).addTo(mapInstance.current);
+
+			L.control
+				.zoom({
+					position: "bottomright",
+				})
+				.addTo(mapInstance.current);
+
+			Object.values(layerGroups.current).forEach((layer) => {
+				if (layer && layer.addTo) {
+					layer.addTo(mapInstance.current);
+				}
+			});
+		}
+		return () => {
+			if (mapInstance.current) {
+				mapInstance.current.remove();
+				mapInstance.current = null;
+			}
+		};
+		// [] - только при монтировании/размонтировании!
+	}, []);
+
+	// 2. Реакция на смену center/zoom — только setView!
+	useEffect(() => {
+		if (mapInstance.current) {
+			mapInstance.current.setView(center, zoom);
+		}
+	}, [center, zoom]);
+
+	// 3. hexStyle как useCallback, чтобы не пересоздавать функцию
 	const hexStyle = useCallback(
 		(feature) => {
 			const pop = feature.properties.pop;
@@ -78,115 +140,35 @@ export default function Map({
 		},
 		[analysisResult]
 	);
-	const layerGroups = useRef({
-		bounds: L.geoJSON(null, {
-			style: { color: "red", weight: 2, fillOpacity: 0.1 },
-		}),
-		population: L.geoJSON(null, {
-			style: hexStyle,
-			onEachFeature: onEachPopulationHex,
-		}),
-		rent: L.layerGroup(),
-		competitors: L.layerGroup(),
-		zones: L.layerGroup(),
-		legend: null,
-	});
 
+	// 4. Обновление слоёв/данных по analysisResult
 	useEffect(() => {
-		if (!mapInstance.current && mapRef.current) {
-			mapInstance.current = L.map(mapRef.current, {
-				center: center,
-				zoom: zoom,
-				zoomControl: false,
-			});
+		const g = layerGroups.current;
+		if (!mapInstance.current) return;
 
-			L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-				attribution:
-					'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-			}).addTo(mapInstance.current);
+		// Очистить все слои
+		g.bounds.clearLayers();
+		g.population.clearLayers();
+		g.rent.clearLayers();
+		g.competitors.clearLayers();
+		g.zones.clearLayers();
 
-			L.control
-				.zoom({
-					position: "bottomright",
-				})
-				.addTo(mapInstance.current);
-
-			layerGroups.current.bounds.addTo(mapInstance.current);
-		} else if (mapInstance.current) {
-			mapInstance.current.setView(center, zoom);
+		if (g.legend && g.legend._map) {
+			mapInstance.current.removeControl(g.legend);
+			g.legend = null;
 		}
 
-		return () => {
-			if (mapInstance.current) {
-				Object.values(layerGroups.current).forEach((layer) => {
-					if (layer && mapInstance.current.hasLayer(layer)) {
-						mapInstance.current.removeLayer(layer);
-					}
-				});
+		if (!analysisResult) return;
 
-				if (layerGroups.current.legend) {
-					mapInstance.current.removeControl(
-						layerGroups.current.legend
-					);
-				}
-				mapInstance.current.remove();
-				mapInstance.current = null;
-				layerGroups.current = {
-					bounds: L.geoJSON(null, {
-						style: { color: "red", weight: 2, fillOpacity: 0.1 },
-					}),
-					population: L.geoJSON(null, {
-						style: hexStyle,
-						onEachFeature: onEachPopulationHex,
-					}),
-					rent: L.layerGroup(),
-					competitors: L.layerGroup(),
-					zones: L.layerGroup(),
-					legend: null,
-				};
-			}
-		};
-	}, [center, hexStyle, zoom]);
-
-	useEffect(() => {
-		if (!mapInstance.current || !analysisResult) {
-			layerGroups.current.bounds.clearLayers();
-			layerGroups.current.population.clearLayers();
-			layerGroups.current.rent.clearLayers();
-			layerGroups.current.competitors.clearLayers();
-			layerGroups.current.zones.clearLayers();
-
-			if (layerGroups.current.legend) {
-				mapInstance.current.removeControl(layerGroups.current.legend);
-				layerGroups.current.legend = null;
-			}
-			return;
-		}
-
-		layerGroups.current.bounds.clearLayers();
-		layerGroups.current.population.clearLayers();
-		layerGroups.current.rent.clearLayers();
-		layerGroups.current.competitors.clearLayers();
-		layerGroups.current.zones.clearLayers();
-
-		if (layerGroups.current.legend && layerGroups.current.legend._map) {
-			mapInstance.current.removeControl(layerGroups.current.legend);
-			layerGroups.current.legend = null;
-		}
-
-		if (analysisResult) {
-			if (onMarkersReady) onMarkersReady();
-		}
+		if (onMarkersReady) onMarkersReady();
 
 		if (analysisResult.bounds) {
-			layerGroups.current.bounds.addData(analysisResult.bounds);
+			g.bounds.addData(analysisResult.bounds);
 		}
-
 		if (analysisResult.hexs) {
-			layerGroups.current.population.options.style = hexStyle;
-			layerGroups.current.population.addData(analysisResult.hexs);
+			g.population.options.style = hexStyle;
+			g.population.addData(analysisResult.hexs);
 		}
-
 		if (analysisResult.rent_places?.length > 0) {
 			analysisResult.rent_places.forEach((place) => {
 				if (place.coordinates && place.coordinates.length === 2) {
@@ -202,16 +184,10 @@ export default function Map({
 						)} ₽<br><b>Площадь:</b> ${place.total_area} м²`,
 						{ className: "popup-rent" }
 					);
-					layerGroups.current.rent.addLayer(marker);
-				} else {
-					console.warn(
-						"Invalid coordinates for rent place:",
-						place.id
-					);
+					g.rent.addLayer(marker);
 				}
 			});
 		}
-
 		if (analysisResult.competitors?.length > 0) {
 			analysisResult.competitors.forEach((place) => {
 				if (place.coordinates && place.coordinates.length === 2) {
@@ -225,16 +201,10 @@ export default function Map({
 						}<br><b>Отзывов:</b> ${place.rate_count ?? "N/A"}`,
 						{ className: "popup-competitor" }
 					);
-					layerGroups.current.competitors.addLayer(marker);
-				} else {
-					console.warn(
-						"Invalid coordinates for competitor:",
-						place.id || place.name
-					);
+					g.competitors.addLayer(marker);
 				}
 			});
 		}
-
 		if (
 			analysisResult.locations?.length > 0 &&
 			analysisResult.circle_radius_km
@@ -253,29 +223,22 @@ export default function Map({
 						}`,
 						{ className: "popup-zone" }
 					);
-
 					circleRefs.current[loc.id] = circle;
-					layerGroups.current.zones.addLayer(circle);
-				} else {
-					console.warn("Invalid center for location zone:", loc);
+					g.zones.addLayer(circle);
 				}
 			});
 		}
-
 		if (analysisResult?.hexs?.max) {
 			const legend = L.control({ position: "bottomleft" });
-
 			legend.onAdd = function () {
 				const div = L.DomUtil.create(
 					"div",
 					"info legend bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-md space-y-2 min-w-[250px]"
 				);
 				const maxPop = analysisResult.hexs.max;
-
 				const generateLogLabels = (max) => {
 					const labels = new Set([0]);
 					const maxOrder = Math.ceil(Math.log10(Math.max(max, 10)));
-
 					for (let i = 0; i <= maxOrder; i++) {
 						const value = Math.pow(10, i);
 						if (value <= max) labels.add(value);
@@ -283,7 +246,6 @@ export default function Map({
 					labels.add(max);
 					return Array.from(labels).sort((a, b) => a - b);
 				};
-
 				const logScalePoints = generateLogLabels(maxPop);
 
 				div.innerHTML = `
@@ -324,20 +286,27 @@ export default function Map({
 
 				return div;
 			};
-
 			layerGroups.current.legend = legend;
-
 			if (visibleLayers?.population && mapInstance.current) {
 				legend.addTo(mapInstance.current);
 			}
 		}
-	}, [analysisResult, circleRefs, hexStyle, onMarkersReady, visibleLayers?.population]);
+		// eslint-disable-next-line
+	}, [
+		analysisResult,
+		hexStyle,
+		circleRefs,
+		onMarkersReady,
+		visibleLayers?.population,
+	]);
 
+	// 5. Управление слоями (видимость)
 	useEffect(() => {
+		const g = layerGroups.current;
 		if (!mapInstance.current || !visibleLayers) return;
 
 		Object.keys(visibleLayers).forEach((key) => {
-			const layer = layerGroups.current[key];
+			const layer = g[key];
 			const shouldBeVisible = visibleLayers[key];
 
 			if (!layer) return;
@@ -361,5 +330,13 @@ export default function Map({
 		});
 	}, [visibleLayers, analysisResult]);
 
-	return <div ref={mapRef} className="h-full w-full" />;
-}
+	return (
+		<div
+			ref={mapRef}
+			className="h-full w-full"
+			style={{ minHeight: 300 }}
+		/>
+	);
+});
+
+export default Map;
